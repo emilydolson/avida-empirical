@@ -504,7 +504,13 @@ void cOrganism::doOutput(cAvidaContext& ctx,
       GetPhenotype().SetToDie();
     }
   }
-  m_interface->UpdateResources(ctx, global_res_change);
+  if (m_phenotype.GetMakeRandomResource()){
+    //call the random resource update function
+    m_interface->UpdateRandomResources(ctx, global_res_change);
+    
+  }else{
+    m_interface->UpdateResources(ctx, global_res_change);
+  }
 
   //update deme resources
   m_interface->UpdateDemeResources(ctx, deme_res_change);
@@ -826,6 +832,8 @@ bool cOrganism::Divide_CheckViable(cAvidaContext& ctx)
   const int immunity_reaction = m_world->GetConfig().IMMUNITY_REACTION.Get();
   const int single_reaction = m_world->GetConfig().REQUIRE_SINGLE_REACTION.Get();
 
+  const int max_task_count = m_world->GetConfig().MAX_UNIQUE_TASK_COUNT.Get();
+  
   if (single_reaction == 0 && required_reaction != -1 && m_phenotype.GetCurReactionCount()[required_reaction] == 0 && \
       m_phenotype.GetStolenReactionCount()[required_reaction] == 0)   {
     if (immunity_reaction == -1 || m_phenotype.GetCurReactionCount()[immunity_reaction] == 0) {
@@ -835,26 +843,41 @@ bool cOrganism::Divide_CheckViable(cAvidaContext& ctx)
     }
   }
 
-  if (single_reaction != 0)
-  {
-    bool toFail = true;
-    Apto::Array<int> reactionCounts = m_phenotype.GetCurReactionCount();
-    for (int i=0; i<reactionCounts.GetSize(); i++)
-    {
-      if (reactionCounts[i] > 0) toFail = false;
+  
+  if (max_task_count > 0) {
+    int task_limit = max_task_count;
+    Apto::Array<int> task_counts = m_phenotype.GetCurTaskCount();
+    for (int i=0; i < task_counts.GetSize(); i++) {
+      if (task_counts[i] > 0)
+        task_limit--;
     }
+    
+    if (task_limit < 0) {
+      Fault(FAULT_LOC_DIVIDE, FAULT_TYPE_ERROR,
+            cStringUtil::Stringf("Organism performs more than MAX_TASK_COUNT tasks"));
+      return false; //  (divide fails)
+    }
+ 
+  }
+  
+  if (single_reaction != 0) {
+    int toFail = single_reaction;
+    Apto::Array<int> reactionCounts = m_phenotype.GetCurReactionCount();
+    for (int i=0; i<reactionCounts.GetSize() && toFail; i++) {
+      if (reactionCounts[i] > 0) --toFail;
+    }
+    
+    if (toFail) {
 
-    if (toFail)
-    {
       const Apto::Array<int>& stolenReactions = m_phenotype.GetStolenReactionCount();
-      for (int i = 0; i < stolenReactions.GetSize(); i++)
+      for (int i = 0; i < stolenReactions.GetSize() && toFail; i++)
       {
-        if (stolenReactions[i] > 0) toFail = false;
+        if (stolenReactions[i] > 0) --toFail;
       }
     }
 
     if (toFail) {
-      Fault(FAULT_LOC_DIVIDE, FAULT_TYPE_ERROR, cStringUtil::Stringf("Lacks any reaction required for divide"));
+      Fault(FAULT_LOC_DIVIDE, FAULT_TYPE_ERROR, cStringUtil::Stringf("Lacks sufficient reactions required for divide"));
       return false; //  (divide fails)
     }
   }

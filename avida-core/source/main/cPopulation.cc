@@ -32,6 +32,7 @@
 #include "avida/systematics/Arbiter.h"
 #include "avida/systematics/Group.h"
 #include "avida/systematics/Manager.h"
+#include "avida/systematics/Unit.h"
 
 #include "avida/private/systematics/GenomeTestMetrics.h"
 #include "avida/private/systematics/Genotype.h"
@@ -65,7 +66,9 @@
 
 #include "cHardwareCPU.h"
 
+#include <cstdlib>
 #include <fstream>
+#include <iostream>
 #include <vector>
 #include <algorithm>
 #include <numeric>
@@ -779,6 +782,63 @@ bool cPopulation::ActivateOffspring(cAvidaContext& ctx, Genome& offspring_genome
       offspring_array[i]->SetParaDonate(Apto::Max(Apto::Min(newVir, 1.0), 0.0));
     }
 
+    // If full vertical transmission of symbionts is on, we need to infect the offspring.
+    if (m_world->GetConfig().FULL_VERTICAL_TRANS.Get() != 0.0)
+    {
+      if(ctx.GetRandom().P(m_world->GetConfig().FULL_VERTICAL_TRANS.Get()))
+      {
+        
+        Apto::Array<Systematics::UnitPtr> parasites_to_inject = parent_organism->GetParasites();
+        cOrganism* target_organism = offspring_array[i];
+        // target_organism-> target_organism->GetHardware().GetCurThread()
+        for (int p=0; p<parasites_to_inject.GetSize(); ++p)
+        {
+          //cout << "successful vert trans!" << endl;
+          Apto::SmartPtr<cParasite, Apto::InternalRCObject> parasite_parent;
+          parasite_parent.DynamicCastFrom(parasites_to_inject[p]);
+        
+          Genome mg(parasite_parent->UnitGenome());
+        
+          cString label;
+          label.Set("Test");
+          Apto::SmartPtr<cParasite, Apto::InternalRCObject> parasite(new cParasite(m_world, mg, 0, Systematics::Source(Systematics::HORIZONTAL, (const char*)label)));
+  
+          //Need to set the virulence properly
+          if (m_world->GetConfig().VIRULENCE_SOURCE.Get() == 2){
+            //Virulence controlled by host
+            parasite->SetVirulence(target_organism->GetParaDonate());
+          } else if (m_world->GetConfig().VIRULENCE_SOURCE.Get() == 1)
+          {
+            //Virulence inherited from parent parasite
+            double oldVir = parasite_parent->GetVirulence();
+    
+            //default to not mutating
+            double newVir = oldVir;
+    
+            //but if we do mutate...
+            if (m_world->GetRandom().GetDouble() < m_world->GetConfig().VIRULENCE_MUT_RATE.Get())
+            {
+              //get this in a temp variable so we don't have to make the next line huge
+              double vir_sd = m_world->GetConfig().VIRULENCE_SD.Get();
+      
+              //sd^2 = varience
+              newVir = m_world->GetRandom().GetRandNormal(oldVir, vir_sd * vir_sd);
+      
+            }
+            parasite->SetVirulence(Apto::Max(Apto::Min(newVir, 1.0), 0.0));
+          } else
+          {
+            //get default virulence
+            parasite->SetVirulence(m_world->GetConfig().PARASITE_VIRULENCE.Get());
+          }
+        
+          if (target_organism->ParasiteInfectHost(parasite)) {
+            Systematics::Manager::Of(m_world->GetNewWorld())->ClassifyNewUnit(parasite);
+          }
+        }
+      } //else cout << "vert trans failed!" << endl;
+    }
+    
     // If spatial groups are used, put the offspring in the
     // parents' group, if tolerances are used check if the offspring
     // is successfully born into the parent's group or successfully immigrates
@@ -1095,6 +1155,23 @@ bool cPopulation::TestForParasiteInteraction(cOrganism* infected_host, cOrganism
     interaction_fails = rand > prob_success;
   }
 
+  // 6: Parasite must perform at least one task (no specificity, but requires tasks performed).
+  if (infection_mechanism == 6) {
+      //handle skipping of first task
+      int start = 0;
+      if (m_world->GetConfig().INJECT_SKIP_FIRST_TASK.Get()) {
+          start += 1;
+      }
+    
+      //find if there is a parasite task that the host isn't doing
+      for (int i = start; i < host_task_counts.GetSize(); i++) {
+          if (parasite_task_counts[i] > 0) {
+              //inject should succeed if there is a matching task
+              interaction_fails = false;
+          }
+      }
+  }
+  
   // TODO: Add other infection mechanisms -LZ
   // : Probabilistic infection based on overlap. (GFG)
   // : Multiplicative GFG (special case of above?)
@@ -1130,8 +1207,22 @@ bool cPopulation::ActivateParasite(cOrganism* host, Systematics::UnitPtr parent,
   // @TODO - activate parasite target selection should account for hardware type
   cOrganism* target_organism = NULL;
   // If there's any migration turned on ... try this first
-  if(m_world->GetConfig().NUM_DEMES.Get() > 1 && m_world->GetConfig().DEMES_PARASITE_MIGRATION_RATE.Get() > 0.0 && m_world->GetConfig().DEMES_MIGRATION_METHOD.Get() == 4 && m_world->GetRandom().P(m_world->GetConfig().DEMES_PARASITE_MIGRATION_RATE.Get())){
+  if(
+    m_world->GetConfig().NUM_DEMES.Get() > 0
+    && m_world->GetConfig().DEMES_PARASITE_MIGRATION_RATE.Get() > 0.0
+    && m_world->GetConfig().DEMES_MIGRATION_METHOD.Get() == 4
+    && m_world->GetRandom().P(m_world->GetConfig().DEMES_PARASITE_MIGRATION_RATE.Get())
+  ){
     cDeme& deme = GetDeme(m_world->GetMigrationMatrix().GetProbabilisticDemeID(host_cell.GetDemeID(), m_world->GetRandom(),true));
+
+    const int infection_mode = m_world->GetConfig().DEMES_PARASITE_MIGRATION_TARGET_SELECTION_METHOD.Get();
+    const auto immune_thresh = m_world->GetConfig().DEMES_PARASITE_MIGRATION_MEMORY_SCORE_PROTECTIVE_THRESHOLD.Get();
+    if (
+      immune_thresh != 0.0
+      && deme.GetParasiteMemoryScore() >= immune_thresh
+    ) return false;
+
+    if (infection_mode == 0) {
 
     // Implementation #1 - Picks randomly of ALL cells in to-deme and then finds if the one it chose was occupied
     // -- Not ensured to infect an individual
@@ -1139,6 +1230,25 @@ bool cPopulation::ActivateParasite(cOrganism* host, Systematics::UnitPtr parent,
     if(rand_cell.IsOccupied()){
       target_organism = rand_cell.GetOrganism();
     }
+
+    } else if (infection_mode == 1) {
+    // Implementation #2 - Picks randomly, guaranteeing an infection
+    const int num_occupied_cells = deme.GetOrgCount();
+    int which_cell = m_world->GetRandom().GetInt(num_occupied_cells);
+    for (int i = 0; i < deme.GetSize(); i++) {
+      if (deme.GetCell(i).IsOccupied()) {
+        if (which_cell == 0) {
+          target_organism = deme.GetCell(i).GetOrganism();
+          break;
+        }
+        which_cell--;
+      }
+    }
+    } else {
+      std::cout << "bad demes parasite migration infection mode " << infection_mode << std::endl;
+      std::abort();
+    }
+
   }
   else{
     // Else there was no migration ... Resort to the default BIRTH_METHOD
@@ -1168,10 +1278,17 @@ bool cPopulation::ActivateParasite(cOrganism* host, Systematics::UnitPtr parent,
       hw.GetNumThreads() == m_world->GetConfig().MAX_CPU_THREADS.Get()) return false;
 
   //Handle host specific injection
-  if(TestForParasiteInteraction(host, target_organism) == false)
-    return false;
 
+  const bool parasite_interaction = TestForParasiteInteraction(host, target_organism);
+  if (m_world->GetConfig().LOG_PARASITE_INJECTIONS.Get()) {
+    Avida::Output::FilePtr df = Avida::Output::File::StaticWithPath(m_world->GetNewWorld(), "parasite_injection.dat");
+    cString UpdateStr = cStringUtil::Stringf("%d,%d,%d,%d", m_world->GetStats().GetUpdate(), target_organism->GetDemeID(), target_organism->GetCellID(), parasite_interaction);
+    df->WriteRaw(UpdateStr);
+  }
 
+  if(parasite_interaction == false) return false;
+
+  
   // Attempt actual parasite injection
   // LZ - use parasige_genotype_list for the GenRepPtr instead IF Config says to
   // e.g., use predefined genotypes to hold the frequency constant, or "replay" parasite
@@ -2294,8 +2411,9 @@ void cPopulation::Kaboom(cPopulationCell& in_cell, cAvidaContext& ctx, int dista
   Apto::String ref_genome = organism->GetGenome().Representation()->AsString();
   int bgid = organism->SystematicsGroup("genotype")->ID();
 
-  int radius = 2;
-
+  
+  int radius = m_world->GetConfig().KABOOM_RADIUS.Get();
+  
   for (int i = -1 * radius; i <= radius; i++) {
     for (int j = -1 * radius; j <= radius; j++) {
       cPopulationCell& death_cell = cell_array[GridNeighbor(in_cell.GetID(), world_x, world_y, i, j)];
@@ -2326,6 +2444,95 @@ void cPopulation::Kaboom(cPopulationCell& in_cell, cAvidaContext& ctx, int dista
   KillOrganism(in_cell, ctx);
   // @SLG my prediction = 92% and, 28 get equals
 }
+
+void cPopulation::Kaboom(cPopulationCell& in_cell, cAvidaContext& ctx, int distance, double effect)
+{
+  //Overloaded kaboom that changes neighboring organism merit by effect (non-kin if negative, kin if positive)
+  m_world->GetStats().IncKaboom();
+  m_world->GetStats().AddHamDistance(distance);
+  cOrganism* organism = in_cell.GetOrganism();
+  Apto::String ref_genome = organism->GetGenome().Representation()->AsString();
+  Apto::String agg_inst = "Z";
+  Apto::String coop_inst = "Z";
+  
+  if (effect < 1)
+  agg_inst = m_world->GetHardwareManager().GetInstSet(organism->GetGenome().Properties().Get("instset").StringValue()).GetInst("agg-SA").GetSymbol();
+  else
+  coop_inst = m_world->GetHardwareManager().GetInstSet(organism->GetGenome().Properties().Get("instset").StringValue()).GetInst("coop-SA").GetSymbol();
+  int radius = m_world->GetConfig().KABOOM_RADIUS.Get();
+  
+  int sa_kin_count = 0;
+  int sa_notkin_count = 0;
+  int nsa_kin_count = 0;
+  int nsa_notkin_count = 0;
+  
+  for (int i = -1 * radius; i <= radius; i++) {
+    for (int j = -1 * radius; j <= radius; j++) {
+      if (i==0 && j==0) continue;
+      cPopulationCell& death_cell = cell_array[GridNeighbor(in_cell.GetID(), world_x, world_y, i, j)];
+      
+      //do we actually have something to kill?
+      if (death_cell.IsOccupied() == false) continue;
+      
+      cOrganism* org_temp = death_cell.GetOrganism();
+      
+      
+        Apto::String genome_temp = org_temp->GetGenome().Representation()->AsString();
+        int diff = 0;
+        bool sa_org = false;
+        for (int i = 0; i < genome_temp.GetSize(); i++){
+          if (genome_temp[i] != ref_genome[i]) diff++;
+          if (genome_temp[i] == agg_inst[0] || genome_temp[i] == coop_inst[0]) sa_org = true;
+        }
+      
+        //Is the SA org correctly ID'd by Hamming distance
+        if (sa_org && diff<=distance) {
+          //Correctly id'd as kin
+          sa_kin_count++;
+        } else if (sa_org && diff>distance){
+          //Org with SA inst considered not-kin
+          sa_notkin_count++;
+        } else if (!sa_org && diff<=distance) {
+          //Org without SA inst considered kin
+          nsa_kin_count++;
+        } else if (!sa_org && diff>distance) {
+          //Org without SA considered non-kin correctly
+          nsa_notkin_count++;
+        }
+      
+      
+      
+        if (diff > distance && effect < 1){
+          
+          m_world->GetStats().IncKaboomKills();
+          //Hurting competitors
+          cout << "before " << org_temp->GetPhenotype().GetMerit().GetDouble() << endl;
+          double cur_merit = org_temp->GetPhenotype().GetMerit().GetDouble();
+          double new_merit = cur_merit*effect;
+          cout << "effect is " << effect << endl;
+          cout << "new shoudl be " << new_merit << endl;
+          if (new_merit <= 0) {KillOrganism(death_cell, ctx); cout << "dead: " << death_cell.IsOccupied() << endl;}
+          else {org_temp->UpdateMerit(ctx, new_merit);
+          cout << "after " << org_temp->GetPhenotype().GetMerit().GetDouble() << endl;}
+          
+        }
+        else if (diff <= distance && effect > 1) {
+          //Helping kin
+          double cur_merit = org_temp->GetPhenotype().GetMerit().GetDouble();
+          org_temp->UpdateMerit(ctx, cur_merit*effect);
+          m_world->GetStats().IncKaboomKills();
+        }
+      
+    }
+  }
+  m_world->GetStats().IncSAKin(sa_kin_count);
+  m_world->GetStats().IncSANotKin(sa_notkin_count);
+  m_world->GetStats().IncNSAKin(nsa_kin_count);
+  m_world->GetStats().IncNSANotKin(nsa_notkin_count);
+  KillOrganism(in_cell, ctx); 
+
+}
+
 
 
 void cPopulation::SwapCells(int cell_id1, int cell_id2, cAvidaContext& ctx)
@@ -2979,13 +3186,41 @@ void cPopulation::ReplicateDeme(cDeme& source_deme, cAvidaContext& ctx)
   // Pick a target deme to replicate to, making sure that
   // we don't try to replicate over ourself, i.e. DEMES_REPLACE_PARENT 0
 
+  const int partition_interval = m_world->GetConfig().DEMES_PARTITION_INTERVAL.Get();
+  const int source_partition_begin = (
+    partition_interval
+    ? (source_deme.GetDemeID() / partition_interval) * partition_interval
+    : 0
+  );
+  const int source_partition_end = (
+    partition_interval
+    ? source_partition_begin + partition_interval
+    : GetNumDemes()
+  );
+  const int partition_size = source_partition_end - source_partition_begin;
+  if (source_partition_end - source_partition_begin < 2) {
+    ctx.Driver().Feedback().Error("Partitions must have at least two demes.");
+    ctx.Driver().Feedback().Error(
+      "Partition interval is %d.", partition_interval
+    );
+    ctx.Driver().Feedback().Error(
+      "There are %d demes in partition.", partition_size
+    );
+    ctx.Driver().Feedback().Error(
+      "Partition begins at %d and ends at %d.",
+      source_partition_begin,
+      source_partition_end
+    );
+    ctx.Driver().Abort(Avida::INVALID_CONFIG);
+  }
+  
   int target_id = -1;
   if (m_world->GetConfig().DEMES_PREFER_EMPTY.Get()) {
 
     //@JEB -- use empty_cell_id_array to hold empty demes
     //so we don't have to allocate a list
     int num_empty = 0;
-    for (int i=0; i<GetNumDemes(); i++) {
+    for (int i=source_partition_begin; i<source_partition_end; i++) {
       if (GetDeme(i).IsEmpty()) {
         empty_cell_id_array[num_empty] = i;
         num_empty++;
@@ -3001,7 +3236,8 @@ void cPopulation::ReplicateDeme(cDeme& source_deme, cAvidaContext& ctx)
     target_id = source_deme.GetID();
     const int num_demes = GetNumDemes();
     while(target_id == source_deme.GetID()) {
-      target_id = ctx.GetRandom().GetUInt(num_demes);
+      const int target_pos = ctx.GetRandom().GetUInt(partition_size);
+      target_id = source_partition_begin + target_pos;
     }
   }
 
@@ -3178,10 +3414,18 @@ void cPopulation::ReplaceDeme(cDeme& source_deme, cDeme& target_deme, cAvidaCont
     (*pgrp)[0] = germline_genotype;
 
     Systematics::GroupPtr new_germline_genotype = germline_genotype->ClassifyNewUnit(unit, pgrp);
-    source_deme.ReplaceGermline(new_germline_genotype);
+    
+    //LZ 2022
+    //This resets the source deme with the new germline genotype, which should only happen when the divide method is 0
+    if (m_world->GetConfig().DEMES_DIVIDE_METHOD.Get() == 0) {
+      source_deme.ReplaceGermline(new_germline_genotype);
+      SeedDeme(source_deme, new_germline_genotype, Systematics::Source(Systematics::DUPLICATION, "germline"), ctx);
+    }
+
     target_deme.ReplaceGermline(new_germline_genotype);
-    SeedDeme(source_deme, new_germline_genotype, Systematics::Source(Systematics::DUPLICATION, "germline"), ctx);
+
     SeedDeme(target_deme, new_germline_genotype, Systematics::Source(Systematics::DUPLICATION, "germline"), ctx);
+    
     new_germline_genotype->RemoveUnit();
   } else {
     // Not using germlines; things are much simpler.  Seed the target from the source.
@@ -4858,8 +5102,8 @@ void cPopulation::PrintDemeResource(cAvidaContext& ctx) {
     for(int j = 0; j < res.GetSize(); j++) {
       const char * tmp = res.GetResName(j);
       df->Write(res.Get(ctx, j), cStringUtil::Stringf("Deme %d Resource %s", deme_id, tmp)); //comment);
-      if ((res.GetResourcesGeometry())[j] != nGeometry::GLOBAL && (res.GetResourcesGeometry())[j] != nGeometry::PARTIAL) {
-        PrintDemeSpatialResData(res, j, deme_id, ctx);
+      if (res.IsSpatialResource(j)){
+        PrintDemeSpatialResData(res, j, deme_id, ctx); 
       }
     }
   }
@@ -4887,7 +5131,7 @@ void cPopulation::PrintDemeGlobalResources(cAvidaContext& ctx) {
     df->WriteBlockElement(deme_id, 0, num_res + 1);
 
     for(int r = 0; r < num_res; r++) {
-      if (!res.IsSpatial(r)) {
+      if (!res.IsSpatialResource(r)) {
         df->WriteBlockElement(res.Get(ctx, r), r + 1, num_res + 1);
       }
 
@@ -6568,14 +6812,45 @@ public:
   Apto::Array<bool> parent_teacher;
   Apto::Array<int> parent_ft;
 
+
+  Systematics::Source source = Systematics::Source(Systematics::TransmissionType::UNKNOWN, "", true);
   Systematics::GroupPtr bg;
 
+  
 
   inline sTmpGenotype() : id_num(-1), props(NULL) { ; }
-  inline bool operator<(const sTmpGenotype& rhs) const { return id_num > rhs.id_num; }
-  inline bool operator>(const sTmpGenotype& rhs) const { return id_num < rhs.id_num; }
-  inline bool operator<=(const sTmpGenotype& rhs) const { return id_num >= rhs.id_num; }
-  inline bool operator>=(const sTmpGenotype& rhs) const { return id_num <= rhs.id_num; }
+  inline bool operator<(const sTmpGenotype& rhs) const {
+    namespace Sys = Systematics;
+    const bool is_parasite = (
+      source.transmission_type == Sys::TransmissionType::HORIZONTAL
+      || source.transmission_type == Sys::TransmissionType::VERTICAL
+    );
+    const bool rhs_is_parasite = (
+      rhs.source.transmission_type == Sys::TransmissionType::HORIZONTAL
+      || rhs.source.transmission_type == Sys::TransmissionType::VERTICAL
+    );
+    if (is_parasite == rhs_is_parasite) return id_num > rhs.id_num;
+    else return !is_parasite;
+  }
+  inline bool operator>(const sTmpGenotype& rhs) const {
+    namespace Sys = Systematics;
+    const bool is_parasite = (
+      source.transmission_type == Sys::TransmissionType::HORIZONTAL
+      || source.transmission_type == Sys::TransmissionType::VERTICAL
+    );
+    const bool rhs_is_parasite = (
+      rhs.source.transmission_type == Sys::TransmissionType::HORIZONTAL
+      || rhs.source.transmission_type == Sys::TransmissionType::VERTICAL
+    );
+    if (is_parasite == rhs_is_parasite) return id_num < rhs.id_num;
+    else return is_parasite;
+  }
+  inline bool operator<=(const sTmpGenotype& rhs) const {
+    return !(*this > rhs);
+  }
+  inline bool operator>=(const sTmpGenotype& rhs) const {
+    return !(*this < rhs);
+  }
 };
 
 bool cPopulation::LoadGenotypeList(const cString& filename, cAvidaContext& ctx, Apto::Array<GeneticRepresentationPtr>& list_obj)
@@ -6648,6 +6923,14 @@ bool cPopulation::LoadPopulation(const cString& filename, cAvidaContext& ctx, in
       assert(tmp.cells.GetSize() == tmp.num_cpus);
     }
 
+
+    // Process systematics source
+    assert(tmp.props->Has("src") && tmp.props->Has("src_args"));
+    tmp.source = Systematics::Source(
+      tmp.props->Get("src"),
+      (const char*)filename
+    );
+    
     // Process gestation time offsets
     if (!load_rebirth) {
       cString offsetstr(tmp.props->Get("gest_offset"));
@@ -6745,7 +7028,9 @@ bool cPopulation::LoadPopulation(const cString& filename, cAvidaContext& ctx, in
     }
   }
 
-  // Sort genotypes in descending order according to their id_num
+
+  // Sort genotypes in descending order according to their id_num,
+  // with parasites last
   Apto::QSort(genotypes);
 
   Systematics::ManagerPtr classmgr = Systematics::Manager::Of(m_world->GetNewWorld());
@@ -6786,6 +7071,8 @@ bool cPopulation::LoadPopulation(const cString& filename, cAvidaContext& ctx, in
   int u_cell_id = 0;
   for (int gen_i = 0; gen_i < genotypes.GetSize(); gen_i++) {
     sTmpGenotype& tmp = genotypes[gen_i];
+    //LZ: Tracked down bug in parasite migration here.
+    
     // otherwise, we insert as many organisms as we need
     for (int cell_i = 0; cell_i < tmp.num_cpus; cell_i++) {
       int cell_id = 0;
@@ -6800,7 +7087,9 @@ bool cPopulation::LoadPopulation(const cString& filename, cAvidaContext& ctx, in
 
       assert(tmp.bg->Properties().Has("genome"));
       Genome mg(tmp.bg->Properties().Get("genome"));
-      cOrganism* new_organism = new cOrganism(m_world, ctx, mg, -1, Systematics::Source(Systematics::DIVISION, (const char*)filename, true));
+
+      cOrganism* new_organism = new cOrganism(m_world, ctx, mg, -1, tmp.source);
+      
 
       // Setup the phenotype...
       cPhenotype& phenotype = new_organism->GetPhenotype();
@@ -6861,6 +7150,28 @@ bool cPopulation::LoadPopulation(const cString& filename, cAvidaContext& ctx, in
       // and has no parent, we should always take the rate from the environment.
       new_organism->MutationRates().Copy(cell_array[cell_id].MutationRates());
 
+      // handle parasite
+      const bool is_parasite = (
+        tmp.source.transmission_type == Systematics::TransmissionType::VERTICAL
+        || tmp.source.transmission_type == Systematics::TransmissionType::HORIZONTAL
+      );
+      if (is_parasite) {
+        if (!cell_array[cell_id].IsOccupied()) {
+          std::cerr << "Loaded parasite before or without host!" << std::endl;
+          std::abort();
+        }
+
+        ConstInstructionSequencePtr seq;
+        seq.DynamicCastFrom(mg.Representation());
+
+        InjectParasite(
+          static_cast<const char*>(tmp.source.arguments), // cString label,
+          *seq, // const InstructionSequence& injected_code,
+          cell_id // int cell_id
+        );
+        continue;
+      }
+      
       // Activate the organism in the population...
       bool org_survived = false;
       if (!load_rebirth) {
@@ -8496,7 +8807,9 @@ void cPopulation::UpdateResourceCount(const int Verbosity, cWorld* world) {
                            res->GetHStep(), res->GetRStep(),
                            res->GetCStepX(), res->GetCStepY(),
                            res->GetUpdateDynamic(), res->GetPeakX(), res->GetPeakY(),
-                           res->GetHeight(), res->GetSpread(), res->GetPlateau(), res->GetDecay(),
+
+                           res->GetHeight(), res->GetSpread(), res->GetPlateau(), res->GetOutflow(), 
+
                            res->GetMaxX(), res->GetMinX(), res->GetMaxY(), res->GetMinY(), res->GetAscaler(), res->GetUpdateStep(),
                            res->GetHalo(), res->GetHaloInnerRadius(), res->GetHaloWidth(),
                            res->GetHaloAnchorX(), res->GetHaloAnchorY(), res->GetMoveSpeed(), res->GetMoveResistance(),

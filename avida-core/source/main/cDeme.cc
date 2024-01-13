@@ -37,6 +37,7 @@
 #include "cReactionResult.h" //@JJB**
 #include "cTaskState.h" //@JJB**
 
+#include <cassert>
 #include <cmath>
 
 
@@ -55,6 +56,7 @@ cDeme::cDeme()
   , birth_count_perslot(0)
   , _age(0)
   , generation(0)
+  , parasite_memory_score(0.0)
   , total_org_energy(0.0)
   , time_used(0)
   , gestation_time(0)
@@ -116,6 +118,7 @@ cDeme& cDeme::operator=(const cDeme& in_deme)
   birth_count_perslot                 = in_deme.birth_count_perslot;
   _age                                = in_deme._age;
   generation                          = in_deme.generation;
+  parasite_memory_score               = in_deme.parasite_memory_score;
   total_org_energy                    = in_deme.total_org_energy;
   time_used                           = in_deme.time_used;
   gestation_time                      = in_deme.gestation_time;
@@ -201,6 +204,7 @@ void cDeme::Setup(int id, const Apto::Array<int> & in_cells, int in_width, cWorl
   last_org_count = 0;
   birth_count_perslot = 0;
   m_world = world;
+  parasite_memory_score = 0.0;
 
   replicateDeme = false;
 
@@ -327,6 +331,20 @@ int cDeme::GetNumOrgsWithOpinion() const
     cPopulationCell& cell = GetCell(pos);
     if (cell.IsOccupied() && cell.GetOrganism()->HasOpinion())
       ++count;
+  }
+
+  return count;
+}
+
+int cDeme::GetNumParasites() const
+{
+  const int demeSize = GetSize();
+  int count = 0;
+
+  for (int pos = 0; pos < demeSize; ++pos)
+  {
+    const cPopulationCell &cell = GetCell(pos);
+    if (cell.IsOccupied()) count += cell.GetOrganism()->GetNumParasites();
   }
 
   return count;
@@ -498,6 +516,7 @@ void cDeme::Reset(cAvidaContext& ctx, bool resetResources, double deme_energy)
   time_used = 0;
   cur_birth_count = 0;
   cur_normalized_time_used = 0;
+  parasite_memory_score = 0.0;
   injected_count = 0;
   birth_count_perslot = 0;
   eventsTotal = 0;
@@ -677,6 +696,7 @@ void cDeme::UpdateStats()
  are all messed up.
  */
 void cDeme::ReplaceGermline(const cGermline& germline) {
+  assert(germline.Size());
   _germline = germline;
 }
 
@@ -1450,7 +1470,7 @@ double cDeme::GetShannonMutualInformation()
   }
 	
 //  shannon_sum /= log((double)m_num_active);
-  delete ptask_array;
+  delete[] ptask_array;
   return shannon_sum;
 }
 

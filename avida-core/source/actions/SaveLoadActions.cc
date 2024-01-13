@@ -21,15 +21,22 @@
 
 #include "SaveLoadActions.h"
 
+#include "avida/output/File.h"
+
 #include "cAction.h"
 #include "cActionLibrary.h"
 #include "cArgContainer.h"
 #include "cArgSchema.h"
+#include "cHardwareManager.h"
+#include "cInitFile.h"
+#include "cInstSet.h"
 #include "cPopulation.h"
 #include "cStats.h"
 #include "cStringUtil.h"
 #include "cWorld.h"
 
+#include <cassert>
+#include <cstdio>
 #include <iostream>
 
 
@@ -176,6 +183,245 @@ public:
 };
 
 
+class cActionSaveGermlines : public cAction
+{
+private:
+  cString m_filename;
+  bool m_birthcounts;
+  bool m_parasitememoryscores;
+
+public:
+  cActionSaveGermlines(cWorld* world, const cString& args, Feedback& feedback)
+    : cAction(world, args), m_filename(""), m_birthcounts(false), m_parasitememoryscores(false)
+  {
+    cArgSchema schema(':','=');
+
+    // String Entries
+    schema.AddEntry("filename", 0, "detailgermlines");
+    schema.AddEntry("birthcounts", 0, 0, 1, 0);
+    schema.AddEntry("parasitememoryscores", 1, 0, 1, 0);
+
+    cArgContainer* argc = cArgContainer::Load(args, schema, feedback);
+
+    if (argc) {
+      // String Entries
+      m_filename = argc->GetString(0);
+      // Integer Entries
+      m_birthcounts = argc->GetInt(0);
+      m_parasitememoryscores = argc->GetInt(1);
+    }
+
+    delete argc;
+  }
+
+  static const cString GetDescription() { return "Arguments: [string filename='detailgermlines']"; }
+
+  void Process(cAvidaContext&) {
+    int update = m_world->GetStats().GetUpdate();
+    cString filename = cStringUtil::Stringf("%s-%d.sgerm", (const char*)m_filename, update);
+    Apto::String file_path((const char*)filename);
+    Avida::Output::FilePtr df = Avida::Output::File::CreateWithPath(m_world->GetNewWorld(), file_path);
+    df->SetFileType("germline_data");
+    df->WriteComment("Mode 1 Germline Save");
+    df->WriteTimeStamp();
+    for(int i=0; i<m_world->GetPopulation().GetNumDemes(); ++i) {
+      cDeme& deme = m_world->GetPopulation().GetDeme(i);
+      auto& germline = deme.GetGermline();
+      if (germline.Size()) {
+        const auto& genome = germline.GetLatest();
+        df->Write(i, "Deme ID", "deme_id");
+        genome.LegacySave(Apto::GetInternalPtr(df));
+        if (m_birthcounts) {
+          df->Write(
+            deme.GetBirthCount(), "Deme Birth Count", "deme_birth_count"
+          );
+        }
+        if (m_parasitememoryscores) {
+          df->Write(
+            deme.GetParasiteMemoryScore(), "Deme Parasite Memory Score", "deme_parasite_memory_score"
+          );
+        }
+        df->Endl();
+      }
+
+    }
+  }
+};
+
+
+class cActionLoadGermlines : public cAction
+{
+private:
+  cString m_filename;
+  bool m_verbose;
+
+public:
+  cActionLoadGermlines(cWorld* world, const cString& args, Feedback& feedback)
+    : cAction(world, args), m_filename(""), m_verbose(false)
+  {
+    cString largs(args);
+    if (largs.GetSize()) m_filename = largs.PopWord();
+    if (largs.GetSize()) m_verbose = largs.PopWord().AsInt();
+  }
+
+  static const cString GetDescription() { return "Arguments: [string filename='detailgermlines']"; }
+
+  void Process(cAvidaContext& ctx) {
+    cInitFile input_file(
+      m_filename,
+      m_world->GetWorkingDir(),
+      ctx.Driver().Feedback()
+    );
+    assert(input_file.WasOpened());
+    if (m_verbose) printf(
+      "LoadGermlines input file %s has %d lines.\n",
+      (const char*)m_filename,
+      input_file.GetNumLines()
+    );
+
+    for (int line_id = 0; line_id < input_file.GetNumLines(); line_id++) {
+      auto file_props = input_file.GetLineAsDict(line_id);
+      const int deme_id = Apto::StrAs(file_props->Get("deme_id"));
+      const auto genome_sequence = file_props->Get("sequence");
+      if (m_verbose) printf(
+        "LoadGermlines adding sequence %s to deme %d germline...\n",
+        (const char*)genome_sequence,
+        deme_id
+      );
+
+      HashPropertyMap seq_props;
+      const cInstSet& is = m_world->GetHardwareManager().GetDefaultInstSet();
+      cHardwareManager::SetupPropertyMap(seq_props, (const char*)is.GetInstSetName());
+      if (m_verbose) printf(
+        "LoadGermlines hardware type is %d and instruction set is %s.\n",
+        is.GetHardwareType(),
+        (const char*)is.GetInstSetName()
+      );
+
+      Genome genome(is.GetHardwareType(), seq_props, GeneticRepresentationPtr(new InstructionSequence((const char*)genome_sequence)));
+      if (m_verbose) printf(
+        "Loaded Genome string representation is `%s`.\n",
+        (const char*)genome.AsString()
+      );
+
+      auto& germline = m_world->GetPopulation().GetDeme(deme_id).GetGermline();
+      if (m_verbose) printf(
+        "LoadGermlines deme %d germline size before add was %d.\n",
+        deme_id,
+        germline.Size()
+      );
+      germline.Add(genome);
+      if (m_verbose) printf(
+        "LoadGermlines deme %d germline size after add is %d.\n",
+        deme_id,
+        germline.Size()
+      );
+    }
+  }
+};
+
+class cActionLoadBirthCounts : public cAction
+{
+private:
+  cString m_filename;
+  bool m_verbose;
+
+public:
+  cActionLoadBirthCounts(cWorld* world, const cString& args, Feedback& feedback)
+    : cAction(world, args), m_filename(""), m_verbose(false)
+  {
+    cString largs(args);
+    if (largs.GetSize()) m_filename = largs.PopWord();
+    if (largs.GetSize()) m_verbose = largs.PopWord().AsInt();
+  }
+
+  static const cString GetDescription() { return "Arguments: [string filename='detailgermlines']"; }
+
+  void Process(cAvidaContext& ctx) {
+    cInitFile input_file(
+      m_filename,
+      m_world->GetWorkingDir(),
+      ctx.Driver().Feedback()
+    );
+    assert(input_file.WasOpened());
+    if (m_verbose) printf(
+      "LoadBirthCounts input file %s has %d lines.\n",
+      (const char*)m_filename,
+      input_file.GetNumLines()
+    );
+
+    for (int line_id = 0; line_id < input_file.GetNumLines(); line_id++) {
+      auto file_props = input_file.GetLineAsDict(line_id);
+      const int deme_id = Apto::StrAs(file_props->Get("deme_id"));
+      const int deme_birth_count = Apto::StrAs(file_props->Get("deme_birth_count"));
+      if (m_verbose)
+        printf(
+          "LoadBirthCounts deme %d has %d births.\n", deme_id, deme_birth_count
+        );
+
+      auto& deme = m_world->GetPopulation().GetDeme(deme_id);
+      deme.SetBirthCount(deme_birth_count);
+      printf(
+        "LoadBirthCounts set deme %d birth counts to %d.\n",
+        deme_id,
+        deme.GetBirthCount()
+      );
+    }
+  }
+};
+
+
+class cActionLoadParasiteMemoryScores : public cAction
+{
+private:
+  cString m_filename;
+  bool m_verbose;
+
+public:
+  cActionLoadParasiteMemoryScores(cWorld* world, const cString& args, Feedback& feedback)
+    : cAction(world, args), m_filename(""), m_verbose(false)
+  {
+    cString largs(args);
+    if (largs.GetSize()) m_filename = largs.PopWord();
+    if (largs.GetSize()) m_verbose = largs.PopWord().AsInt();
+  }
+
+  static const cString GetDescription() { return "Arguments: [string filename='detailgermlines']"; }
+
+  void Process(cAvidaContext& ctx) {
+    cInitFile input_file(
+      m_filename,
+      m_world->GetWorkingDir(),
+      ctx.Driver().Feedback()
+    );
+    assert(input_file.WasOpened());
+    if (m_verbose) printf(
+      "LoadParasiteMemoryScores input file %s has %d lines.\n",
+      (const char*)m_filename,
+      input_file.GetNumLines()
+    );
+
+    for (int line_id = 0; line_id < input_file.GetNumLines(); line_id++) {
+      auto file_props = input_file.GetLineAsDict(line_id);
+      const int deme_id = Apto::StrAs(file_props->Get("deme_id"));
+      const double deme_parasite_memory_score = Apto::StrAs(file_props->Get("deme_parasite_memory_score"));
+      if (m_verbose)
+        printf(
+          "LoadParasiteMemoryScores deme %d has %f score.\n", deme_id, deme_parasite_memory_score
+        );
+
+      auto& deme = m_world->GetPopulation().GetDeme(deme_id);
+      deme.SetParasiteMemoryScore(deme_parasite_memory_score);
+      printf(
+        "LoadParasiteMemoryScores set deme %d score to %f.\n",
+        deme_id,
+        deme.GetParasiteMemoryScore()
+      );
+    }
+  }
+};
+
+
 class cActionLoadStructuredSystematicsGroup : public cAction
 {
 private:
@@ -287,6 +533,10 @@ void RegisterSaveLoadActions(cActionLibrary* action_lib)
   action_lib->Register<cActionLoadHostGenotypeList>("LoadHostGenotypeList");
   action_lib->Register<cActionLoadPopulation>("LoadPopulation");
   action_lib->Register<cActionSavePopulation>("SavePopulation");
+  action_lib->Register<cActionLoadGermlines>("LoadGermlines");
+  action_lib->Register<cActionSaveGermlines>("SaveGermlines");
+  action_lib->Register<cActionLoadBirthCounts>("LoadBirthCounts");
+  action_lib->Register<cActionLoadParasiteMemoryScores>("LoadParasiteMemoryScores");
   action_lib->Register<cActionLoadStructuredSystematicsGroup>("LoadStructuredSystematicsGroup");
   action_lib->Register<cActionSaveStructuredSystematicsGroup>("SaveStructuredSystematicsGroup");
   action_lib->Register<cActionSaveFlameData>("SaveFlameData");

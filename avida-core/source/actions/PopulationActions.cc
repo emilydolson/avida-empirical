@@ -54,8 +54,11 @@
 #include <algorithm>
 #include <iterator>
 #include <map>
+#include <limits>
 #include <numeric>
 #include <set>
+#include <utility>
+#include <vector>
 
 #include "stdlib.h"
 
@@ -105,18 +108,24 @@ public:
   {
     if (m_filename.GetSize() == 0) {
       cerr << "error: no organism file specified" << endl;
-      return;
+      m_world->GetDriver().Abort(AbortCondition::IO_ERROR);
     }
     GenomePtr genome;
     cUserFeedback feedback;
     genome = Util::LoadGenomeDetailFile(m_filename, m_world->GetWorkingDir(), m_world->GetHardwareManager(), feedback);
     for (int i = 0; i < feedback.GetNumMessages(); i++) {
       switch (feedback.GetMessageType(i)) {
-        case cUserFeedback::UF_ERROR:    cerr << "error: "; break;
-        case cUserFeedback::UF_WARNING:  cerr << "warning: "; break;
+        case cUserFeedback::UF_ERROR:    
+          cerr << "error: "; 
+          cerr << feedback.GetMessage(i) << endl;
+          m_world->GetDriver().Abort(AbortCondition::GENERIC_ERROR);
+          break;
+        case cUserFeedback::UF_WARNING:  
+          cerr << "warning: ";
+          cerr << feedback.GetMessage(i) << endl; 
+          break;
         default: break;
       };
-      cerr << feedback.GetMessage(i) << endl;
     }
     if (!genome) return;
     m_world->GetPopulation().Inject(*genome, Systematics::Source(Systematics::DIVISION, "", true), ctx, m_cell_id, m_merit, m_lineage_label, m_neutral_metric, false);
@@ -451,6 +460,86 @@ public:
 };
 
 /*
+ Injects a set number of identical organisms into random cells.
+ 
+ Parameters:
+ filename (string)
+ The filename of the genotype to load.
+ num (int)
+ The number of organisms to inject.
+ merit (double) default: -1
+ The initial merit of the organism. If set to -1, this is ignored.
+ lineage label (integer) default: 0
+ An integer that marks all descendants of this organism.
+ neutral metric (double) default: 0
+ A double value that randomly drifts over time.
+ */
+class cActionInjectWellMixed : public cAction
+{
+private:
+  cString m_filename;
+  int m_cell_num;
+  double m_merit;
+  int m_lineage_label;
+  double m_neutral_metric;
+public:
+  cActionInjectWellMixed(cWorld* world, const cString& args, Feedback&)
+  : cAction(world, args), m_cell_num(0), m_merit(-1), m_lineage_label(0), m_neutral_metric(0)
+  {
+    cString largs(args);
+    if (largs.GetSize()) m_filename = largs.PopWord();
+    if (largs.GetSize()) m_cell_num = largs.PopWord().AsInt();
+    if (largs.GetSize()) m_merit = largs.PopWord().AsDouble();
+    if (largs.GetSize()) m_lineage_label = largs.PopWord().AsInt();
+    if (largs.GetSize()) m_neutral_metric = largs.PopWord().AsDouble();
+    
+  }
+  
+  static const cString GetDescription() { return "Arguments: <string fname> [int cell_num=0] [double merit=-1] [int lineage_label=0] [double neutral_metric=0]"; }
+  
+  void Process(cAvidaContext& ctx)
+  {
+    if (m_filename.GetSize() == 0) {
+      cerr << "error: no organism file specified" << endl;
+      return;
+    }
+    
+    if (m_cell_num < 0 || m_cell_num > m_world->GetPopulation().GetSize()) {
+      ctx.Driver().Feedback().Warning("InjectWellMixed has invalid range!");
+    } else {
+      GenomePtr genome;
+      cUserFeedback feedback;
+      genome = Util::LoadGenomeDetailFile(m_filename, m_world->GetWorkingDir(), m_world->GetHardwareManager(), feedback);
+      for (int i = 0; i < feedback.GetNumMessages(); i++) {
+        switch (feedback.GetMessageType(i)) {
+          case cUserFeedback::UF_ERROR:    cerr << "error: "; break;
+          case cUserFeedback::UF_WARNING:  cerr << "warning: "; break;
+          default: break;
+        };
+        cerr << feedback.GetMessage(i) << endl;
+      }
+      if (!genome) return;
+      int world_size = m_world->GetPopulation().GetSize();
+      for (int i = 0; i < m_cell_num; i++) {
+         // Find a random cell to use. Assumes one exists.
+        
+        int target_cell = ctx.GetRandom().GetInt(0, world_size-1);
+        
+        
+        
+        assert(target_cell > -1);
+        assert(target_cell < m_world->GetPopulation().GetSize());
+        
+        m_world->GetPopulation().Inject(*genome, Systematics::Source(Systematics::DIVISION, "", true), ctx, target_cell, m_merit, m_lineage_label, m_neutral_metric);
+      
+      }
+      m_world->GetPopulation().SetSyncEvents(true);
+    }
+  }
+};
+
+
+/*
  Injects identical organisms into a range of cells of the population with a specified divide mut rate (per site).
  
  Parameters:
@@ -594,23 +683,31 @@ private:
   cString m_label;
   int m_cell_start;
   int m_cell_end;
+  int m_cell_stride;
+  int m_only_if_parasites_extinct;
 public:
-  cActionInjectParasite(cWorld* world, const cString& args, Feedback&) : cAction(world, args), m_cell_start(0), m_cell_end(-1)
+  cActionInjectParasite(cWorld* world, const cString& args, Feedback&) : cAction(world, args), m_cell_start(0), m_cell_end(-1), m_cell_stride(1), m_only_if_parasites_extinct(0)
   {
     cString largs(args);
     m_filename = largs.PopWord();
     m_label = largs.PopWord();
     if (largs.GetSize()) m_cell_start = largs.PopWord().AsInt();
     if (largs.GetSize()) m_cell_end = largs.PopWord().AsInt();
+    if (largs.GetSize()) m_cell_stride = largs.PopWord().AsInt();
+    if (largs.GetSize()) m_only_if_parasites_extinct = largs.PopWord().AsInt();
     
     if (m_cell_end == -1) m_cell_end = m_cell_start + 1;
   }
   
-  static const cString GetDescription() { return "Arguments: <string filename> <string label> [int cell_start=0] [int cell_end=-1]"; }
+  static const cString GetDescription() { return "Arguments: <string filename> <string label> [int cell_start=0] [int cell_end=-1] [int cell_stride=1] [int only_if_parasites_extinct=0]"; }
   
   void Process(cAvidaContext& ctx)
   {
-    if (m_cell_start < 0 || m_cell_end > m_world->GetPopulation().GetSize() || m_cell_start >= m_cell_end) {
+    if (m_only_if_parasites_extinct && m_world->GetStats().GetNumParasites()) {
+      return;
+    }
+
+    if (m_cell_start < 0 || m_cell_end > m_world->GetPopulation().GetSize() || m_cell_start >= m_cell_end || m_cell_stride <= 0) {
       ctx.Driver().Feedback().Warning("InjectParasite has invalid range!");
     } else {
       GenomePtr genome;
@@ -627,7 +724,7 @@ public:
       if (!genome) return;
       ConstInstructionSequencePtr seq;
       seq.DynamicCastFrom(genome->Representation());
-      for (int i = m_cell_start; i < m_cell_end; i++) {
+      for (int i = m_cell_start; i < m_cell_end; i+=m_cell_stride) {
         m_world->GetPopulation().InjectParasite(m_label, *seq, i);
       }
       m_world->GetPopulation().SetSyncEvents(true);
@@ -1100,6 +1197,47 @@ public:
   }
 };
 
+class cActionClearParasites : public cAction
+{
+private:
+  int m_cell_start;
+  int m_cell_end;
+
+public:
+  cActionClearParasites(cWorld *world, const cString &args, Feedback &) : cAction(world, args), m_cell_start(0), m_cell_end(-1)
+  {
+    cString largs(args);
+    if (largs.GetSize())
+      m_cell_start = largs.PopWord().AsInt();
+    if (largs.GetSize())
+      m_cell_end = largs.PopWord().AsInt();
+
+    if (m_cell_end == -1)
+      m_cell_end = m_cell_start + 1;
+  }
+
+  static const cString GetDescription() { return "Arguments: [int cell_start=0] [int cell_end=-1]"; }
+
+  void Process(cAvidaContext &ctx)
+  {
+    if (m_cell_start < 0 || m_cell_end > m_world->GetPopulation().GetSize() || m_cell_start >= m_cell_end)
+    {
+      ctx.Driver().Feedback().Warning("ClearParasites has invalid range!");
+    }
+    else
+    {
+      cUserFeedback feedback;
+      const cInstSet &is = m_world->GetHardwareManager().GetDefaultInstSet();
+      for (int i = m_cell_start; i < m_cell_end; i++)
+      {
+        auto &cell = m_world->GetPopulation().GetCell(i);
+        if (cell.IsOccupied()) cell.GetOrganism()->ClearParasites();
+      }
+      m_world->GetPopulation().SetSyncEvents(true);
+    }
+  }
+};
+
 /*                                                                                                 
  Applies a fixed population bottleneck to the current population.                                  
  Parameters:                                                                                       
@@ -1164,6 +1302,47 @@ public:
       if (live_orgs[i]->SystematicsGroup("genotype")->ID() == dom_id) doomed_orgs.Push(live_orgs[i]->GetCellID());
     }
     cPopulation& pop = m_world->GetPopulation();                                                
+    
+    for (int j=0; j < doomed_orgs.GetSize(); j++) {
+      pop.KillOrganism(ctx, doomed_orgs[j]);
+    }
+  }
+};
+
+
+class cActionProbKillSequence : public cAction
+{
+private:
+  cString m_sequence;
+  double m_killprob;
+  
+public:
+  cActionProbKillSequence(cWorld* world, const cString& args, Feedback&) : cAction(world, args), m_killprob(0.9)
+  {
+    cString largs(args);
+    if (largs.GetSize()) m_sequence = largs.PopWord();
+    if (largs.GetSize()) m_killprob = largs.PopWord().AsDouble();
+  }
+  
+  static const cString GetDescription() { return "Arguments: <string sequence> [double probability=0.9]"; }
+  
+  void Process(cAvidaContext& ctx)
+  {
+    const Apto::Array<cOrganism*, Apto::Smart> live_orgs = m_world->GetPopulation().GetLiveOrgList();
+    Apto::Array<int, Apto::Smart> doomed_orgs;
+    
+    const cInstSet& is = m_world->GetHardwareManager().GetDefaultInstSet();
+    HashPropertyMap props;
+    cHardwareManager::SetupPropertyMap(props, (const char*)is.GetInstSetName());
+    Genome arg_genome(is.GetHardwareType(), props, GeneticRepresentationPtr(new InstructionSequence((const char*)m_sequence)));
+    
+    
+    
+    for (int i = 0; i < live_orgs.GetSize(); i++) {
+      //if (live_orgs[i]->SystematicsGroup("genotype")->ID() == dom_id) doomed_orgs.Push(live_orgs[i]->GetCellID());
+      if (live_orgs[i]->GetGenome() == arg_genome & ctx.GetRandom().P(m_killprob)) doomed_orgs.Push(live_orgs[i]->GetCellID());
+    }
+    cPopulation& pop = m_world->GetPopulation();
     
     for (int j=0; j < doomed_orgs.GetSize(); j++) {
       pop.KillOrganism(ctx, doomed_orgs[j]);
@@ -3773,6 +3952,25 @@ public:
 };
 
 
+class cActionReplicateDeme : public cAction
+{
+private:
+  int m_id;
+public:
+  cActionReplicateDeme(cWorld* world, const cString& args, Feedback&) : cAction(world, args), m_id(0) {
+    cString largs(args);
+    if (largs.GetSize()) m_id = largs.PopWord().AsInt();
+  }
+
+  static const cString GetDescription() { return "Arguments: <int src_id>"; }
+
+  void Process(cAvidaContext& ctx) {
+    cDeme& deme = m_world->GetPopulation().GetDeme(m_id);
+    m_world->GetPopulation().ReplicateDeme(deme, ctx);
+  }
+};
+
+
 class cActionNewTrial : public cAction
 {
 private:
@@ -3822,6 +4020,38 @@ public:
     
   }
 };
+
+
+class cActionUpdateDemeParasiteMemoryScores : public cAction
+{
+private:
+  double m_decay_rate;
+  bool m_verbose;
+
+public:
+  cActionUpdateDemeParasiteMemoryScores(cWorld* world, const cString& args, Feedback&) : cAction(world, args), m_decay_rate(0.99), m_verbose(false)
+  {
+    cString largs(args);
+    m_decay_rate = largs.PopWord().AsDouble();
+    m_verbose = largs.PopWord().AsInt();
+  }
+
+  static const cString GetDescription() { return "Arguments: <double decay_rate>"; }
+
+  void Process(cAvidaContext& ctx)
+  {
+    auto& pop = m_world->GetPopulation();
+    const int numDemes = pop.GetNumDemes();
+    for (int deme_id = 0; deme_id < numDemes; deme_id++)
+    {
+      auto &deme = pop.GetDeme(deme_id);
+      deme.UpdateParasiteMemoryScore(m_decay_rate);
+      if (m_verbose) std::cout << deme.GetParasiteMemoryScore() << " ";
+    }
+    if (m_verbose) std::cout << std::endl;
+  }
+};
+
 
 class cActionCompeteOrganisms : public cAction
 {
@@ -5023,6 +5253,327 @@ public:
 
 
 /*
+ Kill deme(s) with the highest parasite load
+
+ Parameters:
+ - The percent of living organisms to kill (default: 0)
+ */
+
+class cActionKillDemesHighestParasiteLoad : public cAction
+{
+private:
+  double m_killprob;
+  int m_killmax;
+public:
+  cActionKillDemesHighestParasiteLoad(cWorld *world, const cString &args, Feedback &) : cAction(world, args), m_killprob(0.01), m_killmax(std::numeric_limits<int>::max())
+  {
+    cString largs(args);
+    if (largs.GetSize()) m_killprob = largs.PopWord().AsDouble();
+    if (largs.GetSize()) m_killmax = largs.PopWord().AsInt();
+
+    assert(m_killprob >= 0);
+  }
+
+  static const cString GetDescription() { return "Arguments: [double killprob=0.01] [int killmax = intmax]"; }
+
+  void Process(cAvidaContext& ctx) {
+    const int part_size = m_world->GetConfig().DEMES_PARTITION_INTERVAL.Get();
+    const int num_demes = m_world->GetPopulation().GetNumDemes();
+    if (part_size) {
+      for (int i = 0; i < num_demes; i+= part_size) {
+        const int begin = i;
+        const int end = std::min(i + part_size, num_demes);
+        ProcessPartition(begin, end, ctx);
+      }
+    } else {
+      ProcessPartition(0, num_demes, ctx);
+    }
+  }
+
+  void ProcessPartition(const int begin, const int end, cAvidaContext& ctx)
+  {
+    cPopulation& pop = m_world->GetPopulation();
+    const int num_demes = end - begin;
+    std::vector<int> deme_indices(num_demes);
+    std::iota(
+      std::begin(deme_indices),
+      std::end(deme_indices),
+      begin
+    );
+
+    struct HasAny {
+      cPopulation& pop;
+      HasAny(cPopulation& pop) : pop(pop) {}
+      bool operator()(const int d){ return not pop.GetDeme(d).IsEmpty(); }
+    };
+    const int num_eligible = std::count_if(
+      std::begin(deme_indices), std::end(deme_indices),
+      HasAny(pop)
+    );
+    const int binomial_draw = ctx.GetRandom().GetRandBinomial(
+      num_eligible,
+      m_killprob
+    );
+    const int kill_quota = std::min(m_killmax, binomial_draw);
+    if (kill_quota != binomial_draw) {
+      std::cout << "warning: capped kill quota at " << kill_quota << " from " << binomial_draw << " binomial sample with " << num_eligible << " eligible and kill prob " << m_killprob << std::endl;
+    }
+
+    struct GetParasiteLoad {
+      cPopulation& pop;
+      GetParasiteLoad(cPopulation& pop) : pop(pop) {}
+      double operator()(const int d){ return pop.GetDeme(d).GetParasiteLoad(); }
+    };
+    std::vector<double> parasite_loads(num_demes);
+    std::transform(
+      std::begin(deme_indices), std::end(deme_indices),
+      std::begin(parasite_loads),
+      GetParasiteLoad(pop)
+    );
+
+    struct Comp {
+      std::vector<double>& loads;
+      const int begin;
+      Comp(std::vector<double> &loads, const int begin)
+      : loads(loads), begin(begin) {}
+      bool operator()(const int d1, const int d2) {
+        return loads[d1 - begin] > loads[d2 - begin];
+      }
+    };
+    std::partial_sort(
+        std::begin(deme_indices),
+        std::next(std::begin(deme_indices), kill_quota),
+        std::end(deme_indices),
+        Comp(parasite_loads, begin)
+    );
+
+    struct DoKill {
+      cPopulation& pop;
+      cAvidaContext& ctx;
+      DoKill(cPopulation& pop, cAvidaContext& ctx) : pop(pop), ctx(ctx) {}
+      void operator()(const int d) { pop.GetDeme(d).KillAll(ctx); }
+    };
+    std::for_each(
+      std::begin(deme_indices),
+      std::next(std::begin(deme_indices), kill_quota),
+      DoKill(pop, ctx)
+    );
+
+} // End Process()
+};
+
+
+/*
+ Replicate deme(s) with the highest birth count
+ */
+class cActionReplicateDemesHighestBirthCount : public cAction
+{
+private:
+  double m_replprob;
+  int m_replmax;
+public:
+  cActionReplicateDemesHighestBirthCount(cWorld *world, const cString &args, Feedback &) : cAction(world, args), m_replprob(0.01), m_replmax(std::numeric_limits<int>::max())
+  {
+    cString largs(args);
+    if (largs.GetSize()) m_replprob = largs.PopWord().AsDouble();
+    if (largs.GetSize()) m_replmax = largs.PopWord().AsInt();
+
+    assert(m_replprob >= 0);
+  }
+
+  static const cString GetDescription() { return "Arguments: [double replprob=0.01] [int replmax = intmax]"; }
+
+  void Process(cAvidaContext &ctx)
+  {
+    const int part_size = m_world->GetConfig().DEMES_PARTITION_INTERVAL.Get();
+    const int num_demes = m_world->GetPopulation().GetNumDemes();
+    if (part_size)
+    {
+      for (int i = 0; i < num_demes; i += part_size)
+      {
+        const int begin = i;
+        const int end = std::min(i + part_size, num_demes);
+        ProcessPartition(begin, end, ctx);
+      }
+    }
+    else
+    {
+      ProcessPartition(0, num_demes, ctx);
+    }
+  }
+
+  void ProcessPartition(const int begin, const int end, cAvidaContext &ctx)
+  {
+    cPopulation& pop = m_world->GetPopulation();
+    const int num_demes = end - begin;
+    std::vector<int> deme_indices(num_demes);
+    std::iota(std::begin(deme_indices), std::end(deme_indices), begin);
+
+    const int binomial_draw = ctx.GetRandom().GetRandBinomial(
+      num_demes,
+      m_replprob
+    );
+    const int repl_quota = std::min(binomial_draw, m_replmax);
+    if (repl_quota == 0) return;
+
+    if (repl_quota != binomial_draw) {
+      std::cout << "warning: capped repl quota at " << repl_quota << " from " << binomial_draw << " binomial sample with " << num_demes << " eligible and repl prob " << m_replprob << std::endl;
+    }
+
+    struct GetBirthCount {
+      cPopulation &pop;
+      GetBirthCount(cPopulation &pop) : pop(pop) {}
+      double operator()(const int d) { return pop.GetDeme(d).GetBirthCount(); }
+    };
+    std::vector<double> birth_counts(num_demes);
+    std::transform(
+        std::begin(deme_indices), std::end(deme_indices),
+        std::begin(birth_counts),
+        GetBirthCount(pop)
+    );
+
+    struct Comp {
+      std::vector<double> &births;
+      const int begin;
+      Comp(std::vector<double> &births, const int begin)
+      : births(births), begin(begin) {}
+      bool operator()(const int d1, const int d2)
+      {
+        return births[d1 - begin] > births[d2 - begin];
+      }
+    };
+    std::partial_sort(
+        std::begin(deme_indices),
+        std::next(std::begin(deme_indices), repl_quota),
+        std::end(deme_indices),
+        Comp(birth_counts, begin)
+    );
+
+    struct DoRepl {
+      cPopulation &pop;
+      cAvidaContext &ctx;
+      DoRepl(cPopulation &pop, cAvidaContext &ctx) : pop(pop), ctx(ctx) {}
+      void operator()(const int d) { pop.ReplicateDeme(pop.GetDeme(d), ctx); }
+    };
+    std::for_each(
+        std::begin(deme_indices),
+        std::next(std::begin(deme_indices), repl_quota),
+        DoRepl(pop, ctx)
+    );
+
+  } // End Process()
+};
+
+
+/*
+ * Replicate deme(s) with the highest fecundity
+ * (cell count with ties broken by birth count)
+ */
+class cActionReplicateDemesHighestFecundity : public cAction
+{
+private:
+  double m_replprob;
+  int m_replmax;
+public:
+  cActionReplicateDemesHighestFecundity(cWorld *world, const cString &args, Feedback &) : cAction(world, args), m_replprob(0.01), m_replmax(std::numeric_limits<int>::max())
+  {
+    cString largs(args);
+    if (largs.GetSize()) m_replprob = largs.PopWord().AsDouble();
+    if (largs.GetSize()) m_replmax = largs.PopWord().AsInt();
+
+    assert(m_replprob >= 0);
+  }
+
+  static const cString GetDescription() { return "Arguments: [double replprob=0.01] [int replmax = intmax]"; }
+
+  void Process(cAvidaContext &ctx)
+  {
+    const int part_size = m_world->GetConfig().DEMES_PARTITION_INTERVAL.Get();
+    const int num_demes = m_world->GetPopulation().GetNumDemes();
+    if (part_size)
+    {
+      for (int i = 0; i < num_demes; i += part_size)
+      {
+        const int begin = i;
+        const int end = std::min(i + part_size, num_demes);
+        ProcessPartition(begin, end, ctx);
+      }
+    }
+    else
+    {
+      ProcessPartition(0, num_demes, ctx);
+    }
+  }
+
+  void ProcessPartition(const int begin, const int end, cAvidaContext &ctx)
+  {
+    cPopulation& pop = m_world->GetPopulation();
+    const int num_demes = end - begin;
+    std::vector<int> deme_indices(num_demes);
+    std::iota(std::begin(deme_indices), std::end(deme_indices), begin);
+
+    const int binomial_draw = ctx.GetRandom().GetRandBinomial(
+      num_demes,
+      m_replprob
+    );
+    const int repl_quota = std::min(binomial_draw, m_replmax);
+    if (repl_quota == 0) return;
+
+    if (repl_quota != binomial_draw) {
+      std::cout << "warning: capped repl quota at " << repl_quota << " from " << binomial_draw << " binomial sample with " << num_demes << " eligible and repl prob " << m_replprob << std::endl;
+    }
+
+    using fecundity_t = std::pair<int, int>;
+    struct GetFecundity {
+      cPopulation &pop;
+      GetFecundity(cPopulation &pop) : pop(pop) {}
+      fecundity_t operator()(const int d) {
+        return fecundity_t(
+          pop.GetDeme(d).GetOrgCount(), pop.GetDeme(d).GetBirthCount()
+        );
+      }
+    };
+    std::vector<fecundity_t> fecundities(num_demes);
+    std::transform(
+        std::begin(deme_indices), std::end(deme_indices),
+        std::begin(fecundities),
+        GetFecundity(pop)
+    );
+
+    struct Comp {
+      std::vector<fecundity_t> &fecundities;
+      const int begin;
+      Comp(std::vector<fecundity_t> &fecundities, const int begin)
+      : fecundities(fecundities), begin(begin) {}
+      bool operator()(const int d1, const int d2)
+      {
+        return fecundities[d1 - begin] > fecundities[d2 - begin];
+      }
+    };
+    std::partial_sort(
+        std::begin(deme_indices),
+        std::next(std::begin(deme_indices), repl_quota),
+        std::end(deme_indices),
+        Comp(fecundities, begin)
+    );
+
+    struct DoRepl {
+      cPopulation &pop;
+      cAvidaContext &ctx;
+      DoRepl(cPopulation &pop, cAvidaContext &ctx) : pop(pop), ctx(ctx) {}
+      void operator()(const int d) { pop.ReplicateDeme(pop.GetDeme(d), ctx); }
+    };
+    std::for_each(
+        std::begin(deme_indices),
+        std::next(std::begin(deme_indices), repl_quota),
+        DoRepl(pop, ctx)
+    );
+
+  } // End Process()
+};
+
+
+/*
  Set the ages at which treatable demes can be treated
  
  Parameters:
@@ -5586,6 +6137,7 @@ void RegisterPopulationActions(cActionLibrary* action_lib)
   action_lib->Register<cActionInjectAll>("InjectAll");
   action_lib->Register<cActionInjectRange>("InjectRange");
   action_lib->Register<cActionInjectSequence>("InjectSequence");
+  action_lib->Register<cActionInjectWellMixed>("InjectWellMixed");
   action_lib->Register<cActionInjectSequenceWithDivMutRate>("InjectSequenceWDivMutRate");
   action_lib->Register<cActionInjectDemes>("InjectDemes");
   action_lib->Register<cActionInjectModuloDemes>("InjectModuloDemes");
@@ -5600,9 +6152,11 @@ void RegisterPopulationActions(cActionLibrary* action_lib)
   action_lib->Register<cActionKillInstLimit>("KillInstLimit");
   action_lib->Register<cActionKillInstPair>("KillInstPair");
   action_lib->Register<cActionKillProb>("KillProb");
-  action_lib->Register<cActionKillProb>("KillProb");
+  action_lib->Register<cActionClearParasites>("ClearParasites");
   action_lib->Register<cActionApplyBottleneck>("ApplyBottleneck");
   action_lib->Register<cActionKillDominantGenotype>("KillDominantGenotype");
+  action_lib->Register<cActionProbKillSequence>("KillProbSequence");
+  
   action_lib->Register<cActionAttackDen>("AttackDen");
   action_lib->Register<cActionRaidDen>("RaidDen");
   action_lib->Register<cActionKillFractionInSequence>("KillFractionInSequence");
@@ -5628,9 +6182,11 @@ void RegisterPopulationActions(cActionLibrary* action_lib)
   action_lib->Register<cActionDivideDemes>("DivideDemes");
   action_lib->Register<cActionResetDemes>("ResetDemes");
   action_lib->Register<cActionCopyDeme>("CopyDeme");
+  action_lib->Register<cActionReplicateDeme>("ReplicateDeme");
   action_lib->Register<cActionMixPopulation>("MixPopulation");
 	
   action_lib->Register<cActionDecayPoints>("DecayPoints");
+  action_lib->Register<cActionUpdateDemeParasiteMemoryScores>("UpdateDemeParasiteMemoryScores");
   
   action_lib->Register<cActionFlash>("Flash");
   
@@ -5685,6 +6241,10 @@ void RegisterPopulationActions(cActionLibrary* action_lib)
   action_lib->Register<cActionKillWithinRadiusBelowResourceThreshold>("KillWithinRadiusBelowResourceThreshold");
   action_lib->Register<cActionKillWithinRadiusMeanBelowResourceThreshold>("KillWithinRadiusMeanBelowResourceThreshold");
   action_lib->Register<cActionKillWithinRadiusBelowResourceThresholdTestAll>("KillWithinRadiusBelowResourceThresholdTestAll");
+  action_lib->Register<cActionKillDemePercent>("KillDemePercent");
+  action_lib->Register<cActionKillDemesHighestParasiteLoad>("KillDemesHighestParasiteLoad");
+  action_lib->Register<cActionReplicateDemesHighestBirthCount>("ReplicateDemesHighestBirthCount");
+  action_lib->Register<cActionReplicateDemesHighestFecundity>("ReplicateDemesHighestFecundity");
   action_lib->Register<cActionKillMeanBelowThresholdPaintable>("KillMeanBelowThresholdPaintable");
 	
   action_lib->Register<cActionDiffuseHGTGenomeFragments>("DiffuseHGTGenomeFragments");

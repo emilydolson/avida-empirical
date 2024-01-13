@@ -280,7 +280,7 @@ public:
   // -------- General config options --------
   CONFIG_ADD_GROUP(GENERAL_GROUP, "General Settings");
   CONFIG_ADD_VAR(VERBOSITY, int, 1, "0 = No output at all\n1 = Normal output\n2 = Verbose output, detailing progress\n3 = High level of details, as available\n4 = Print Debug Information, as applicable");
-  CONFIG_ADD_VAR(RANDOM_SEED, int, -1, "Random number seed (-1 for based on time)");
+  CONFIG_ADD_VAR(RANDOM_SEED, int, -1, "Random number seed (<0 for based on time)");
   CONFIG_ADD_VAR(SPECULATIVE, bool, 1, "Enable speculative execution\n(pre-execute instructions that don't affect other organisms)");
   CONFIG_ADD_VAR(POPULATION_CAP, int, 0, "Carrying capacity in number of organisms (use 0 for no cap)");
   CONFIG_ADD_VAR(POP_CAP_ELDEST, int, 0, "Carrying capacity in number of organisms (use 0 for no cap). Will kill oldest organism in population, but still use birth method to place new offspring."); 
@@ -402,7 +402,8 @@ public:
   CONFIG_ADD_VAR(IMMUNITY_TASK, int, -1, "Task providing immunity from the required task");
   CONFIG_ADD_VAR(REQUIRED_REACTION, int, -1, "Reaction ID required for successful divide");
   CONFIG_ADD_VAR(IMMUNITY_REACTION, int, -1, "Reaction ID that provides immunity for successful divide");
-  CONFIG_ADD_VAR(REQUIRE_SINGLE_REACTION, int, 0, "If set to 1, at least one reaction is required for a successful divide");
+  CONFIG_ADD_VAR(REQUIRE_SINGLE_REACTION, int, 0, "If set to 1, at least one reaction is required for a successful divide; if set to n > 1, at least n reactions are required for a successful divide");
+  CONFIG_ADD_VAR(MAX_UNIQUE_TASK_COUNT, int, -1, "Division will fail if organism performs more than MAX_TASK_COUNT when MAX_TASK_COUNT >= 0");
   CONFIG_ADD_VAR(REQUIRED_BONUS, double, 0.0, "Required bonus to divide");
   CONFIG_ADD_VAR(REQUIRE_EXACT_COPY, int, 0, "Require offspring to be an exact copy (checked before divide mutations)");
   CONFIG_ADD_VAR(REQUIRED_RESOURCE, int, -1, "ID of resource required in organism's internal bins for successful\n  divide (resource not consumed)");
@@ -441,6 +442,7 @@ public:
 	
   // -------- Parasite options --------
   CONFIG_ADD_GROUP(PARASITE_GROUP, "Parasite config options");
+  CONFIG_ADD_VAR(LOG_PARASITE_INJECTIONS, bool, 0, "Log parasite replications?");
   CONFIG_ADD_VAR(INJECT_METHOD, int, 0, "What should happen to a parasite when it gives birth?\n0 = Leave the parasite thread state untouched.\n1 = Resets the state of the calling thread (for SMT parasites, this must be 1)");
   CONFIG_ADD_VAR(INFECTION_MECHANISM, int, 1, "0: Infection always succeeds. \n1: Infection succeeds if parasite matches at least one host task.\n2: Infection succeeds if parasite does NOT match at least one task.\n3: Parasite tasks must match host tasks exactly (Matching Alleles).");
   CONFIG_ADD_ALIAS(INJECT_IS_TASK_SPECIFIC);
@@ -461,6 +463,8 @@ public:
   CONFIG_ADD_VAR(PARASITE_NO_COPY_MUT, int, 0, "Parasites do not get copy mutation rates");
   CONFIG_ADD_VAR(PARASITE_USE_GENOTYPE_FILE, int, 0, "Parasite Genotypes are loaded from a file rather than replicated from parent -- see LoadParasiteGenotypeList");
   CONFIG_ADD_VAR(HOST_USE_GENOTYPE_FILE, int, 0, "Host Genotypes are loaded from a file rather than replicated from parent -- see LoadHostGenotypeList");
+  
+  CONFIG_ADD_VAR(FULL_VERTICAL_TRANS, double, 0.0, "Determines if offspring of infected host is automatically infected. 0 for no, 1 for yes. If you want to keep parent infected as well, you need to set DIVIDE_METHOD to 2.");
 
 
   // -------- CPU Archetecture
@@ -504,11 +508,14 @@ public:
   CONFIG_ADD_VAR(DEMES_REPLICATE_ORGS, int, 0, "Number of organisms in a deme to trigger its replication (0 = OFF).");
   CONFIG_ADD_VAR(DEMES_REPLICATION_ONLY_RESETS, int, 0, "Kin selection mode.  On replication:\n0 = Nothing extra\n1 = reset deme resources\n2 = reset resources and re-inject organisms");
   CONFIG_ADD_VAR(DEMES_MIGRATION_RATE, double, 0.0, "Probability of an offspring being born in a different deme.");
-  CONFIG_ADD_VAR(DEMES_PARASITE_MIGRATION_RATE, double, 0.0, "Probability of a parasite migrating to a different deme"); 
+  CONFIG_ADD_VAR(DEMES_PARASITE_MIGRATION_RATE, double, 0.0, "Probability of a parasite migrating to a different deme. Note: only works with DEMES_MIGRATION_METHOD 4.");
   CONFIG_ADD_VAR(DEMES_MIGRATION_METHOD, int, 0, "Which demes can an offspring land in when it migrates?\n0 = Any other deme\n1 = Eight neighboring demes\n2 = Two adjacent demes in list\n3 = Proportional based on the number of points\n4 = Use the weight matrix specified in MIGRATION_FILE");
+  CONFIG_ADD_VAR(DEMES_PARASITE_MIGRATION_TARGET_SELECTION_METHOD, int, 0, "How should a target cell be chosen in the migrated-to deme?\n0 = Select a cell randomly, if it is not occupied infection fails\n1 = Select an occupied cell randomly");
+  CONFIG_ADD_VAR(DEMES_PARASITE_MIGRATION_MEMORY_SCORE_PROTECTIVE_THRESHOLD, double, 1.0, "Above what parasite memory score should hosts be protected from incoming parasite migration?");
   CONFIG_ADD_VAR(DEMES_NUM_X, int, 0, "Simulated number of demes in X dimension. Used only for migration. ");
+  CONFIG_ADD_VAR(DEMES_PARTITION_INTERVAL, int, 0, "Restrict deme replication to within partitions of DEMES_PARTITION_INTERVAL consecutive deme ids. No restriction if 0. Partition size cannot be smaller than two. Does not affect migration.");
   CONFIG_ADD_VAR(DEMES_SEED_METHOD, int, 0, "Deme seeding method.\n0 = Maintain old consistency\n1 = New method using genotypes");
-  CONFIG_ADD_VAR(DEMES_DIVIDE_METHOD, int, 0, "Deme divide method. Only works with DEMES_SEED_METHOD 1\n0 = Replace and target demes\n1 = Replace target deme, reset source deme to founders\n2 = Replace target deme, leave source deme unchanged\n3 = Replace the target deme, and reset the number of resources consumed by the source deme.\n4 = Replace the target deme,  reset the number of resources consumed by the source deme, and kill the germ line organisms of the source deme");
+  CONFIG_ADD_VAR(DEMES_DIVIDE_METHOD, int, 0, "Deme divide method. Only works with DEMES_SEED_METHOD 1\n0 = Replace source and target demes\n1 = Replace target deme, reset source deme to founders\n2 = Replace target deme, leave source deme unchanged\n3 = Replace the target deme, and reset the number of resources consumed by the source deme.\n4 = Replace the target deme,  reset the number of resources consumed by the source deme, and kill the germ line organisms of the source deme");
   CONFIG_ADD_VAR(DEMES_DEFAULT_GERMLINE_PROPENSITY, double, 0.0, "Default germline propensity of organisms in deme.\nFor use with DEMES_DIVIDE_METHOD 2.");
   CONFIG_ADD_VAR(DEMES_FOUNDER_GERMLINE_PROPENSITY, double, -1.0, "Default germline propensity of founder organisms in deme.\nFor use with DEMES_DIVIDE_METHOD 2.\n <0 = OFF");
   CONFIG_ADD_VAR(DEMES_PREFER_EMPTY, int, 0, "Give empty demes preference as targets of deme replication?");
@@ -578,6 +585,7 @@ public:
   CONFIG_ADD_GROUP(KABOOM_GROUP, "Kaboom");
   CONFIG_ADD_VAR(KABOOM_PROB, double, -1, "The probability (in decimal) that an explosion will occur when the instruction is encountered. -1 is default probability and allows the organism to change the probability.");
   CONFIG_ADD_VAR(KABOOM_RADIUS, int, 2, "Radius of all explosions (kaboom and kaboom5)");
+  CONFIG_ADD_VAR(KABOOM_EFFECT, int, 10, "Merit increased or decreased for surrounding kin or non-kin");
   CONFIG_ADD_VAR(KABOOM_HAMMING, int, 0, "Hamming distance of kaboom's threshold, set to -1 to have adjustable, default is 0 for clone altruists.");
   CONFIG_ADD_VAR(KABOOM1_HAMMING, int, 1, "Hamming distance of kaboom1's threshold, set to -1 to have adjustable, default is 1.");
   CONFIG_ADD_VAR(KABOOM2_HAMMING, int, 2, "Hamming distance of kaboom2's threshold, set to -1 to have adjustable, default is 2.");

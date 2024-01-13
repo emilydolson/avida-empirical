@@ -428,6 +428,18 @@ void cPopulationInterface::UpdateResources(cAvidaContext& ctx, const Apto::Array
   return m_world->GetPopulation().UpdateCellResources(ctx, res_change, m_cell_id);
 }
 
+void cPopulationInterface::UpdateRandomResources(cAvidaContext& ctx, const Apto::Array<double>& res_change)
+{
+  //get a random cell ID
+  int random_id;
+  int x = m_world->GetConfig().WORLD_X.Get();
+  int y = m_world->GetConfig().WORLD_Y.Get();
+  int size = x * y;
+  random_id = rand() % size;
+  //cout << "put resource in " << random_id << " instead of " << m_cell_id << endl;
+  return m_world->GetPopulation().UpdateCellResources(ctx, res_change, random_id);
+}
+
 void cPopulationInterface::UpdateDemeResources(cAvidaContext& ctx, const Apto::Array<double>& res_change)
 {
   return m_world->GetPopulation().UpdateDemeCellResources(ctx, res_change, m_cell_id);
@@ -451,7 +463,14 @@ void cPopulationInterface::Kaboom(int distance, cAvidaContext& ctx)
   m_world->GetPopulation().Kaboom(cell, ctx, distance);
 }
 
-void cPopulationInterface::SpawnDeme(cAvidaContext& ctx)
+
+void cPopulationInterface::Kaboom(int distance, cAvidaContext& ctx, double effect)
+{
+  cPopulationCell & cell = m_world->GetPopulation().GetCell(m_cell_id);
+  m_world->GetPopulation().Kaboom(cell, ctx, distance, effect);
+}
+
+void cPopulationInterface::SpawnDeme(cAvidaContext& ctx) 
 {
   // const int num_demes = m_world->GetPopulation().GetNumDemes();
 
