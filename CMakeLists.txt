@@ -24,7 +24,7 @@ SET(LIBRARY_OUTPUT_PATH
   "Built libraries are placed here before installation."
 )
 
-INCLUDE_DIRECTORIES(../Empirical/source)
+INCLUDE_DIRECTORIES(../Empirical/include/emp)
 
 ADD_SUBDIRECTORY(libs/apto)
 if(NOT WIN32 AND NOT DEFINED ENV{AVIDA_DISABLE_BACKTRACE})
@@ -34,7 +34,7 @@ IF(NOT WIN32)
   ADD_SUBDIRECTORY(libs/tcmalloc-1.4)
 ENDIF(NOT WIN32)
 ADD_SUBDIRECTORY(avida-core)
-#ADD_SUBDIRECTORY(../Empirical/source/ .)
+# ADD_SUBDIRECTORY(../Empirical/include/emp .)
 
 # Default location for installed software/configs/ docs is the build directory.
 SET(CMAKE_INSTALL_PREFIX

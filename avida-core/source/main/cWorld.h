@@ -33,15 +33,15 @@
 #include "avida/core/InstructionSequence.h"
 #include "avida/core/Genome.h"
 
-#include "Evolve/Systematics.h"
-#include "Evolve/SystematicsAnalysis.h"
-#include "Evolve/OEE.h"
-#include "control/Signal.h"
-#include "control/SignalControl.h"
-#include "tools/memo_function.h"
-#include "base/Ptr.h"
-#include "base/vector.h"
-#include "data/DataFile.h"
+#include "Evolve/Systematics.hpp"
+#include "Evolve/SystematicsAnalysis.hpp"
+#include "Evolve/OEE.hpp"
+#include "control/Signal.hpp"
+#include "control/SignalControl.hpp"
+#include "functional/memo_function.hpp"
+#include "base/Ptr.hpp"
+#include "base/vector.hpp"
+#include "data/DataFile.hpp"
 
 #include <array>
 #include <cassert>
