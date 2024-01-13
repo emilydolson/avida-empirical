@@ -4709,7 +4709,7 @@ void cPopulation::PrintDemeInstructions()
       for (int i = 0; i < cur_deme.GetSize(); i++) {
         int cur_cell = cur_deme.GetCellID(i);
         if (!cell_array[cur_cell].IsOccupied()) continue;
-        if (cell_array[cur_cell].GetOrganism()->GetGenome().Properties().Get(s_prop_id_instset).StringValue() != inst_set) continue;
+        if (!cell_array[cur_cell].GetOrganism()->GetGenome().Properties().Get(s_prop_id_instset).StringValue()) continue;
         cPhenotype& phenotype = GetCell(cur_cell).GetOrganism()->GetPhenotype();
 
         for (int j = 0; j < num_inst; j++) single_deme_inst[j].Add(phenotype.GetLastInstCount()[j]);

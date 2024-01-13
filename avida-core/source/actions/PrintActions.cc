@@ -804,7 +804,7 @@ public:
     const int num_cells = population.GetSize();
     for (int x = 0; x < num_cells; x++) {
       cPopulationCell& cell = population.GetCell(x);
-      if (cell.IsOccupied() && cell.GetOrganism()->GetGenome().Properties().Get("instset").StringValue() == is.GetInstSetName()) {
+      if (cell.IsOccupied() && cell.GetOrganism()->GetGenome().Properties().Get("instset").StringValue()) {
         // access this CPU's code block
         cCPUMemory& cpu_mem = cell.GetOrganism()->GetHardware().GetMemory();
         const int mem_size = cpu_mem.GetSize();
