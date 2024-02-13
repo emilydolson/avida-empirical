@@ -66,6 +66,6 @@ jobs:
           tags: "latest"
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-          repository: devosoft/avida
+          repository: emilydolson/avida-empirical
           registry: ghcr.io
           add_git_labels: true
