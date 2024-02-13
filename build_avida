@@ -2,8 +2,7 @@
 
 set -e
 
-git submodule init
-git submodule update
+git submodule update --init --recursive
 
 do_build() {
   (
