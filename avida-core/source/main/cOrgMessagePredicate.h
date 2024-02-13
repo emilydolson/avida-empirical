@@ -86,8 +86,8 @@ struct cOrgMessagePred_CountDemeMessages : public cOrgMessagePredicate {
 	}
 	
   virtual void Print(int update, std::ostream& out) {
-		out << update << " COUNT " << 
-		std::accumulate(m_msg_counts.begin(), m_msg_counts.end(), 0, apply2nd<MessageCounts::iterator, plus<int> >()) << " ";
+		// out << update << " COUNT " << 
+		// std::accumulate(m_msg_counts.begin(), m_msg_counts.end(), 0, apply2nd<MessageCounts::iterator, plus<int> >()) << " ";
 		for(MessageCounts::iterator i=m_msg_counts.begin(); i!=m_msg_counts.end(); ++i) {
 			out << " " << i->second;
 		}
