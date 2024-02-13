@@ -71,6 +71,7 @@ cWorld::cWorld(cAvidaConfig* cfg, const cString& wd)
    };
 
     eval_fun = [this](emp::Ptr<taxon_t> tax){
+      // std::cout << "evaluating" << tax << std::endl;
 
        Avida::Genome gen(curr_genome.HardwareType(), curr_genome.Properties(), GeneticRepresentationPtr(new InstructionSequence(tax->GetInfo())));
       //  cAnalyzeGenotype genotype(this, gen);
@@ -264,13 +265,13 @@ bool cWorld::setup(World* new_world, cUserFeedback* feedback, const Apto::Map<Ap
     }
     return ss.str();
   };
-
+  // std::cout << "About to make sys" << std::endl;
   systematics_manager.New([](const Avida::InstructionSequence & seq){return Avida::InstructionSequence(seq);});
-  // systematics_manager->PrintStatus();
+  systematics_manager->PrintStatus();
   systematics_manager->AddSnapshotFun([](const taxon_t & tax) {
       return emp::to_string(tax.GetInfo().AsString().GetCString());
     }, "sequence", "Avida instruction sequence for this taxon.");
-
+  // std::cout << "Make OEE" <<std::endl;
   OEE_stats.New(systematics_manager, skel_fun, [null_inst](const std::string & org){return org.size();}, false, m_conf->WORLD_X.Get() * m_conf->WORLD_Y.Get() * 200000);
   OEE_stats->SetGenerationInterval(m_conf->FILTER_TIME.Get());
   OEE_stats->SetResolution(m_conf->OEE_RES.Get());
@@ -282,27 +283,47 @@ bool cWorld::setup(World* new_world, cUserFeedback* feedback, const Apto::Map<Ap
     // } 
     systematics_manager->SetNextParent(pos);});
   OnOffspringReady([this](Avida::InstructionSequence seq){ 
-    systematics_manager->AddOrg(seq, next_cell_id, GetStats().GetUpdate(), false);
+    // std::cout << "on ready" << std::endl;
+    systematics_manager->AddOrg(seq, emp::WorldPosition(next_cell_id,0), GetStats().GetUpdate());
     emp::Ptr<taxon_t> tax = systematics_manager->GetMostRecent();
     if (tax->GetData().GetPhenotype().gestation_time == -1) {
       eval_fun(tax);
     }
+    // std::cout << "Done with on ready" << std::endl;
   });
-  OnOrgDeath([this](int pos){ systematics_manager->RemoveOrgAfterRepro(pos, GetStats().GetUpdate());});
+  OnOrgDeath([this](int pos){ 
+    // std::cout << "on death " << std::endl; 
+    systematics_manager->RemoveOrgAfterRepro(emp::WorldPosition(pos, 0), GetStats().GetUpdate());});
   OnUpdate([this](int ud){
+    // std::cout << "On update" << std::endl;
     if (std::round(GetStats().GetGeneration()) > latest_gen) { 
       latest_gen = std::round(GetStats().GetGeneration()); 
       OEE_stats->Update(latest_gen, GetStats().GetUpdate()); 
       oee_file.Update(latest_gen); 
     }
+    // std::cout << "On update done" << std::endl;
   });
-  OnUpdate([this](int ud){systematics_manager->Update(); phylodiversity_file.Update(ud); lineage_file.Update(ud); dom_file.Update(ud);});
+  OnUpdate([this](int ud){
+    // std::cout << "On update 2" << std::endl;
+    systematics_manager->Update(); 
+    // std::cout << "systematic man update done" << std::endl;
+    phylodiversity_file.Update(ud); 
+    // std::cout << "Phylodiv file done" << std::endl;
+    lineage_file.Update(ud); 
+    // std::cout << "lin file done" << std::endl;
+    dom_file.Update(ud);
+    // std::cout << "On update 2 done" << std::endl;
+    });
   // --- bookmark ---
-  OnUpdate([this](int ud) { if (GetStats().GetUpdate() % m_conf->PHYLOGENY_SNAPSHOT_RES.Get() == 0) { systematics_manager->Snapshot("phylogeny-snapshot-" + emp::to_string(GetStats().GetUpdate()) + ".csv" ); } });
+  OnUpdate([this](int ud) { 
+    // std::cout << "On update3" << std::endl; 
+    if (GetStats().GetUpdate() % m_conf->PHYLOGENY_SNAPSHOT_RES.Get() == 0) { systematics_manager->Snapshot("phylogeny-snapshot-" + emp::to_string(GetStats().GetUpdate()) + ".csv" ); 
+    // std::cout << "End on update3" << std::endl; 
+    } });
 
   std::function<int()> gen_fun = [this](){return std::round(GetStats().GetGeneration());};
   std::function<int()> update_fun = [this](){return GetStats().GetUpdate();};
-
+  // std::cout << " Setupp output" << std::endl;
   oee_file.AddFun(gen_fun, "generation", "Generation");
   oee_file.AddCurrent(*OEE_stats->GetDataNode("change"), "change", "change potential");
   oee_file.AddCurrent(*OEE_stats->GetDataNode("novelty"), "novelty", "novelty potential");
@@ -316,7 +337,7 @@ bool cWorld::setup(World* new_world, cUserFeedback* feedback, const Apto::Map<Ap
   systematics_manager->AddPhylogeneticDiversityDataNode();
   phylodiversity_file.AddFun(update_fun, "update", "Update");
   phylodiversity_file.AddStats(*systematics_manager->GetDataNode("evolutionary_distinctiveness") , "evolutionary_distinctiveness", "evolutionary distinctiveness for a single update", true, true);
-  phylodiversity_file.AddStats(*systematics_manager->GetDataNode("pairwise_distances"), "pairwise_distance", "pairwise distance for a single update", true, true);
+  // phylodiversity_file.AddStats(*systematics_manager->GetDataNode("pairwise_distances"), "pairwise_distance", "pairwise distance for a single update", true, true);
   phylodiversity_file.AddCurrent(*systematics_manager->GetDataNode("phylogenetic_diversity"), "current_phylogenetic_diversity", "current phylogenetic_diversity", true, true);
 
   phylodiversity_file.template AddFun<size_t>( [this](){ return systematics_manager->GetNumActive(); }, "num_taxa", "Number of unique taxonomic groups currently active." );
