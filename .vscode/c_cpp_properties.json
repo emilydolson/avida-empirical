@@ -5,7 +5,7 @@
             "defines": [],
             "cStandard": "c11",
             "browse": {
-                "path": [ "${workspaceFolder}", "${workspaceFolder}/avida-core/include/public", "${workspaceFolder}/avida-core/include/private", "${workspaceFolder}/../Empirical/source", "${workspaceFolder}/avida-core/include/public/avida/core/*" ],
+                "path": [ "${workspaceFolder}", "${workspaceFolder}/avida-core/include/public", "${workspaceFolder}/avida-core/include/private", "${workspaceFolder}/libs/Empirical/include/emp", "${workspaceFolder}/avida-core/include/public/avida/core/*" ],
                 "limitSymbolsToIncludedHeaders": true
             },
             "includePath": [
@@ -19,7 +19,7 @@
                 "${workspaceFolder}/avida-core/source/core",
                 "${workspaceFolder}/avida-core/source/actions",
                 "${workspaceFolder}/avida-core/source/script",
-                "${workspaceFolder}/../Empirical/source"
+                "${workspaceFolder}/libs/Empirical/include/emp"
             ]
         }
     ],
