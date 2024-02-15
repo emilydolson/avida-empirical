@@ -372,7 +372,8 @@ public:
   CONFIG_ADD_VAR(PREFER_EMPTY, int, 1, "Overide BIRTH_METHOD to preferentially choose empty cells for offsping?");
   CONFIG_ADD_VAR(ALLOW_PARENT, int, 1, "Should parents be considered when deciding where to place offspring?");
   CONFIG_ADD_VAR(DISPERSAL_RATE, double, 0.0, "Rate of dispersal under birth method 11\n(poisson distributed random connection list hops)");
-  CONFIG_ADD_VAR(DEATH_PROB, double, 0.0, "Probability of death when dividing.");
+  CONFIG_ADD_VAR(DEATH_PROB, double, 0.0, "Probability of death when dividing. (@MAM: actually seems to be applied per-update?)");
+  CONFIG_ADD_VAR(DEATH_PROB_PARENT, double, 0.0, "Probability of death when dividing. (@MAM: proper DEATH_PROB impl)");
   CONFIG_ADD_VAR(DEATH_METHOD, int, 2, "When should death by old age occur?\n0 = Never\n1 = When executed AGE_LIMIT (+deviation) total instructions\n2 = When executed genome_length * AGE_LIMIT (+dev) instructions");
   CONFIG_ADD_VAR(AGE_LIMIT, int, 20, "See DEATH_METHOD");
   CONFIG_ADD_VAR(AGE_DEVIATION, int, 0, "Creates a normal distribution around AGE_LIMIT for time of death");
@@ -550,7 +551,7 @@ public:
   CONFIG_ADD_VAR(AVE_TIME_SLICE, int, 30, "Average number of CPU-cycles per org per update");
   CONFIG_ADD_VAR(SLICING_METHOD, int, 1, "0 = CONSTANT: all organisms receive equal number of CPU cycles\n1 = PROBABILISTIC: CPU cycles distributed randomly, proportional to merit.\n2 = INTEGRATED: CPU cycles given out deterministicly, proportional to merit\n3 = DEME_PROBABALISTIC: Demes receive fixed number of CPU cycles, awarded probabalistically to members\n4 = CROSS_DEME_PROBABALISTIC: Demes receive CPU cycles proportional to living population size, awarded probabalistically to members");
   CONFIG_ADD_VAR(BASE_MERIT_METHOD, int, 4, "How should merit be initialized?\n0 = Constant (merit independent of size)\n1 = Merit proportional to copied size\n2 = Merit prop. to executed size\n3 = Merit prop. to full size\n4 = Merit prop. to min of executed or copied size\n5 = Merit prop. to sqrt of the minimum size\n6 = Merit prop. to num times MERIT_BONUS_INST is in genome.");
-  CONFIG_ADD_VAR(BASE_CONST_MERIT, int, 100, "Base merit valse for BASE_MERIT_METHOD 0");
+  CONFIG_ADD_VAR(BASE_CONST_MERIT, int, 100, "Base merit value for BASE_MERIT_METHOD 0");
   CONFIG_ADD_VAR(MERIT_BONUS_INST, int, 0, "Instruction ID to count for BASE_MERIT_METHOD 6"); 
   CONFIG_ADD_VAR(MERIT_BONUS_EFFECT, int, 0, "Amount of merit earn per instruction for BASE_MERIT_METHOD 6 (-1 = penalty, 0 = no effect)"); 
   CONFIG_ADD_VAR(FITNESS_VALLEY, int, 0, "in BASE_MERIT_METHOD 6, this creates valleys from\nFITNESS_VALLEY_START to FITNESS_VALLEY_STOP\n(0 = off, 1 = on)"); 
