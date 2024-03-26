@@ -62,6 +62,7 @@ class cUserFeedback;
 template<class T> class tDataEntry;
 
 struct Phenotype {
+  Avida::InstructionSequence genotype;
   int gestation_time = -1;
   int start_generation = -1;
   emp::vector<int> final_task_count;
@@ -170,8 +171,8 @@ public:
   // Signals triggered by the world.
   emp::SignalControl control;  // Setup the world to control various signals.
   emp::Signal<void(int)> before_repro_sig;       // Trigger: Immediately prior to producing offspring
-  emp::Signal<void(Avida::InstructionSequence)> offspring_ready_sig;  // Trigger: Offspring about to enter population
-  emp::Signal<void(const Avida::InstructionSequence*)> inject_ready_sig;     // Trigger: New org about to be added to population
+  emp::Signal<void(cOrganism &)> offspring_ready_sig;  // Trigger: Offspring about to enter population
+  emp::Signal<void(cOrganism &)> inject_ready_sig;     // Trigger: New org about to be added to population
   emp::Signal<void(int)> org_placement_sig;      // Trigger: Organism has been added to population
   emp::Signal<void(int)> org_death_sig;      // Trigger: Organism has been added to population
   emp::Signal<void(int)> on_update_sig;          // Trigger: New update is starting.
@@ -183,15 +184,18 @@ public:
   emp::DataFile lineage_file;
   emp::DataFile dom_file;
 
-  std::function<double(const Avida::InstructionSequence&)> fit_fun;
-  std::function<std::string(const Avida::InstructionSequence&)> skel_fun;
+  using systematics_t = emp::Systematics<cOrganism, std::string, emp::datastruct::mut_landscape_info<Phenotype>>;
+  using taxon_t = emp::Taxon< std::string, emp::datastruct::mut_landscape_info<Phenotype>>;
+
+  std::function<double(Avida::InstructionSequence&)> fit_fun;
+  std::function<std::string(emp::Ptr<taxon_t>)> skel_fun;
 
   emp::SignalKey OnBeforeRepro(const std::function<void(int)> & fun) { return before_repro_sig.AddAction(fun); }
-  emp::SignalKey OnOffspringReady(const std::function<void(Avida::InstructionSequence)> & fun) { return offspring_ready_sig.AddAction(fun); }
+  emp::SignalKey OnOffspringReady(const std::function<void(cOrganism &)> & fun) { return offspring_ready_sig.AddAction(fun); }
   emp::SignalKey OnOrgPlacement(const std::function<void(int)> & fun) { return org_placement_sig.AddAction(fun); }
   emp::SignalKey OnOrgDeath(const std::function<void(int)> & fun) { return org_death_sig.AddAction(fun); }
   emp::SignalKey OnUpdate(const std::function<void(int)> & fun) { return on_update_sig.AddAction(fun); }
-  emp::SignalKey OnInjectReady(const std::function<void(const Avida::InstructionSequence*)> & fun) { return inject_ready_sig.AddAction(fun); }
+  emp::SignalKey OnInjectReady(const std::function<void(cOrganism &)> & fun) { return inject_ready_sig.AddAction(fun); }
 
   void SetDriver(WorldDriver* driver, bool take_ownership = false);
 
@@ -214,11 +218,9 @@ public:
   bool all_tasks = false;
   int latest_gen = -1; // Force time to go forward
 
-  using systematics_t = emp::Systematics<Avida::InstructionSequence, Avida::InstructionSequence, emp::datastruct::mut_landscape_info<Phenotype>>;
-  using taxon_t = emp::Taxon< Avida::InstructionSequence, emp::datastruct::mut_landscape_info<Phenotype>>;
   emp::Ptr<taxon_t> best_tax;
 
-  std::function<void(emp::Ptr<taxon_t>)> eval_fun;
+  std::function<void(emp::Ptr<taxon_t>, cOrganism&)> eval_fun;
   const emp::vector<std::string> MUTATION_TYPES = {"substitution", "insertion", "deletion"};
 
   using mut_count_t = std::unordered_map<std::string, double>;

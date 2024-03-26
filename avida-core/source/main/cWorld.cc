@@ -70,10 +70,13 @@ cWorld::cWorld(cAvidaConfig* cfg, const cString& wd)
       return test_info.GetGenotypeFitness();
    };
 
-    eval_fun = [this](emp::Ptr<taxon_t> tax){
+    eval_fun = [this](emp::Ptr<taxon_t> tax, cOrganism & org){
       // std::cout << "evaluating" << tax << std::endl;
 
-       Avida::Genome gen(curr_genome.HardwareType(), curr_genome.Properties(), GeneticRepresentationPtr(new InstructionSequence(tax->GetInfo())));
+      // Avida::GeneticRepresentation rep = *(org.GetGenome().Representation());
+      // GeneticRepresentationPtr(org.GetGenome().Representation())
+      Avida::Genome gen(curr_genome.HardwareType(), curr_genome.Properties(), GeneticRepresentationPtr(new InstructionSequence(tax->GetData().GetPhenotype().genotype)));
+      // Avida::Genome gen(curr_genome.HardwareType(), curr_genome.Properties(), );
       //  cAnalyzeGenotype genotype(this, gen);
       //  genotype.Recalculate(*m_ctx);
       cCPUTestInfo test_info;
@@ -90,6 +93,11 @@ cWorld::cWorld(cAvidaConfig* cfg, const cString& wd)
       for (int i = 0; i < tasks.GetSize(); i++) {
         p.final_task_count.push_back(tasks[i]);
       }
+      ConstInstructionSequencePtr seq;
+      seq.DynamicCastFrom(org.GetGenome().Representation());
+
+      p.genotype = Avida::InstructionSequence(*seq);
+
       tax->GetData().RecordPhenotype(p);
    };
 
@@ -256,9 +264,11 @@ bool cWorld::setup(World* new_world, cUserFeedback* feedback, const Apto::Map<Ap
 
   // std::cout << "Got hardware manager" << std::endl;
   // emp_assert(false);
-  skel_fun = [this, null_inst](const Avida::InstructionSequence & seq){
+  skel_fun = [this, null_inst](emp::Ptr<taxon_t> tax){
     // std::cout << "Skeletonizing" <<std::endl;
+ 
     std::stringstream ss;
+    Avida::InstructionSequence seq = tax->GetData().GetPhenotype().genotype;
     emp::vector<Avida::Instruction> skel = emp::Skeletonize(seq, null_inst, fit_fun);
     for (auto inst : skel) {
       ss << inst.GetSymbol();
@@ -266,10 +276,19 @@ bool cWorld::setup(World* new_world, cUserFeedback* feedback, const Apto::Map<Ap
     return ss.str();
   };
   // std::cout << "About to make sys" << std::endl;
-  systematics_manager.New([](const Avida::InstructionSequence & seq){return Avida::InstructionSequence(seq);});
+  if (m_conf->TRACK_INDIVIDUALS.Get()) {
+    systematics_manager.New([](cOrganism & org){return emp::to_string(org.GetID());});
+  } else {
+    systematics_manager.New([](cOrganism & org){
+      ConstInstructionSequencePtr seq;
+      seq.DynamicCastFrom(org.GetGenome().Representation());
+
+      return Avida::InstructionSequence(*seq).AsString().GetCString();
+    });
+  }
   systematics_manager->PrintStatus();
   systematics_manager->AddSnapshotFun([](const taxon_t & tax) {
-      return emp::to_string(tax.GetInfo().AsString().GetCString());
+      return emp::to_string(tax.GetData().GetPhenotype().genotype.AsString().GetCString());
     }, "sequence", "Avida instruction sequence for this taxon.");
 
   if (m_conf->OEE_RES.Get() != 0) {
@@ -284,18 +303,18 @@ bool cWorld::setup(World* new_world, cUserFeedback* feedback, const Apto::Map<Ap
     //   std::cout << systematics_manager->GetTaxonAt(pos)->GetID();
     // } 
     systematics_manager->SetNextParent(pos);});
-  OnOffspringReady([this](Avida::InstructionSequence seq){ 
+  OnOffspringReady([this](cOrganism & org){ 
     // std::cout << "on ready" << std::endl;
-    systematics_manager->AddOrg(seq, emp::WorldPosition(next_cell_id,0), GetStats().GetUpdate());
+    systematics_manager->AddOrg(org, emp::WorldPosition(next_cell_id,0));
     emp::Ptr<taxon_t> tax = systematics_manager->GetMostRecent();
     if (tax->GetData().GetPhenotype().gestation_time == -1) {
-      eval_fun(tax);
+      eval_fun(tax, org);
     }
     // std::cout << "Done with on ready" << std::endl;
   });
   OnOrgDeath([this](int pos){ 
     // std::cout << "on death " << std::endl; 
-    systematics_manager->RemoveOrgAfterRepro(emp::WorldPosition(pos, 0), GetStats().GetUpdate());});
+    systematics_manager->RemoveOrgAfterRepro(emp::WorldPosition(pos, 0));});
   if (m_conf->OEE_RES.Get() != 0) {
     OnUpdate([this](int ud){
       // std::cout << "On update" << std::endl;

@@ -1377,7 +1377,8 @@ bool cPopulation::ActivateOrganism(cAvidaContext& ctx, cOrganism* in_organism, c
   InstructionSequence* nseq = new InstructionSequence(*seq);
   m_world->curr_genome = in_organism->GetGenome();
   m_world->next_cell_id = target_cell.GetID();
-  m_world->offspring_ready_sig.Trigger(*nseq);
+
+  m_world->offspring_ready_sig.Trigger(*in_organism);
   
   delete nseq;
 
