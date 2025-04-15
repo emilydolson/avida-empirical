@@ -299,10 +299,15 @@ bool cWorld::setup(World* new_world, cUserFeedback* feedback, const Apto::Map<Ap
 
   OnBeforeRepro([this](int pos){
     // std::cout << "Next parent is: " << pos; 
-    // if(systematics_manager->IsTaxonAt(pos)){
-    //   std::cout << systematics_manager->GetTaxonAt(pos)->GetID();
-    // } 
+    if(systematics_manager->IsTaxonAt(pos)){
+    } else if (next_parent != nullptr) {
+      systematics_manager->SetNextParent(next_parent);
+      next_parent = nullptr;
+      return;
+    }
     systematics_manager->SetNextParent(pos);});
+  OnDemeRepro([this](int pos){
+    next_parent = systematics_manager->GetTaxonAt(pos);});    
   OnOffspringReady([this](cOrganism & org){ 
     // std::cout << "on ready" << std::endl;
     systematics_manager->AddOrg(org, emp::WorldPosition(next_cell_id,0));

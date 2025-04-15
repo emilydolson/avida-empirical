@@ -3718,6 +3718,7 @@ bool cPopulation::SeedDeme(cDeme& source_deme, cDeme& target_deme, cAvidaContext
       //       because the cGenotype* from cOrganism::GetGenotype may not live after
       //       a call to cDeme::KillAll.
       std::vector<std::pair<Genome,int> > xfer; // List of genomes we're going to transfer.
+      std::vector<int> positions;
 
       switch(m_world->GetConfig().DEMES_ORGANISM_SELECTION.Get()) {
         case 0: { // Random w/ replacement (meaning, we don't prevent the same genotype from
@@ -3727,6 +3728,7 @@ bool cPopulation::SeedDeme(cDeme& source_deme, cDeme& target_deme, cAvidaContext
             if (cell_array[cellid].IsOccupied()) {
               xfer.push_back(std::make_pair(cell_array[cellid].GetOrganism()->GetGenome(),
                                             cell_array[cellid].GetOrganism()->GetLineageLabel()));
+              positions.push_back(cellid);
             }
           }
           break;
@@ -3737,6 +3739,7 @@ bool cPopulation::SeedDeme(cDeme& source_deme, cDeme& target_deme, cAvidaContext
             if (cell_array[cellid].IsOccupied()) {
               xfer.push_back(std::make_pair(cell_array[cellid].GetOrganism()->GetGenome(),
                                             cell_array[cellid].GetOrganism()->GetLineageLabel()));
+                positions.push_back(cellid);
             }
           }
           break;
@@ -3749,9 +3752,21 @@ bool cPopulation::SeedDeme(cDeme& source_deme, cDeme& target_deme, cAvidaContext
       }
       // We'd better have at *least* one genome.
       assert(xfer.size()>0);
-
       // Clear the demes.
       source_deme.UpdateStats();
+      // std::cout << "About to deme replicate " << positions[0] << " " << source_deme.GetOrgCount() << std::endl;
+      // for (int i = 0; i < source_deme.GetSize(); i++) {
+      //   int cellid = source_deme.GetCellID(i);
+      //   if (cell_array[cellid].IsOccupied()) {
+      //     std::cout << "X";
+      //   } else {
+      //     std::cout << " ";
+      //   }
+      //   std::cout << " ";
+      //   if (i % source_deme.GetWidth() == source_deme.GetWidth() - 1) {
+      //     std::cout << std::endl;
+      //   }
+      // }
       source_deme.KillAll(ctx);
 
       target_deme.UpdateStats();
@@ -3760,11 +3775,15 @@ bool cPopulation::SeedDeme(cDeme& source_deme, cDeme& target_deme, cAvidaContext
       // And now populate the source and target.
       int j=0;
       for(std::vector<std::pair<Genome,int> >::iterator i=xfer.begin(); i!=xfer.end(); ++i, ++j) {
+        m_world->before_repro_sig.Trigger(positions[j]);
+        // NOTE: Deme phylogeny tracking will break with propagule size > 1
+        m_world->deme_repro_sig.Trigger(positions[j]);
         int cellid = DemeSelectInjectionCell(source_deme, j);
         InjectGenome(cellid, Systematics::Source(Systematics::DUPLICATION, ""), i->first, ctx, i->second);
         DemePostInjection(source_deme, cell_array[cellid]);
 
         if (source_deme.GetDemeID() != target_deme.GetDemeID()) {
+          m_world->before_repro_sig.Trigger(positions[j]);
           cellid = DemeSelectInjectionCell(target_deme, j);
           InjectGenome(cellid, Systematics::Source(Systematics::DUPLICATION, ""), i->first, ctx, i->second);
           DemePostInjection(target_deme, cell_array[cellid]);

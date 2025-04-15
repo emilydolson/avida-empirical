@@ -176,6 +176,7 @@ public:
   emp::Signal<void(int)> org_placement_sig;      // Trigger: Organism has been added to population
   emp::Signal<void(int)> org_death_sig;      // Trigger: Organism has been added to population
   emp::Signal<void(int)> on_update_sig;          // Trigger: New update is starting.
+  emp::Signal<void(int)> deme_repro_sig;          // Trigger: New update is starting.
 
   Avida::InstructionSequence non_const_seq;
   int next_cell_id = -1;
@@ -187,6 +188,8 @@ public:
   using systematics_t = emp::Systematics<cOrganism, std::string, emp::datastruct::mut_landscape_info<Phenotype>>;
   using taxon_t = emp::Taxon< std::string, emp::datastruct::mut_landscape_info<Phenotype>>;
 
+  emp::Ptr<taxon_t> next_parent = nullptr;
+
   std::function<double(Avida::InstructionSequence&)> fit_fun;
   std::function<std::string(emp::Ptr<taxon_t>)> skel_fun;
 
@@ -196,6 +199,7 @@ public:
   emp::SignalKey OnOrgDeath(const std::function<void(int)> & fun) { return org_death_sig.AddAction(fun); }
   emp::SignalKey OnUpdate(const std::function<void(int)> & fun) { return on_update_sig.AddAction(fun); }
   emp::SignalKey OnInjectReady(const std::function<void(cOrganism &)> & fun) { return inject_ready_sig.AddAction(fun); }
+  emp::SignalKey OnDemeRepro(const std::function<void(int)> & fun) { return deme_repro_sig.AddAction(fun); }
 
   void SetDriver(WorldDriver* driver, bool take_ownership = false);
 
