@@ -89,6 +89,7 @@ cWorld::cWorld(cAvidaConfig* cfg, const cString& wd)
       // p.merit = test_info.GetTestPhenotype().GetMerit().GetDouble();
       p.gestation_time = test_info.GetTestPhenotype().GetGestationTime();
       p.start_generation = test_info.GetTestPhenotype().GetGeneration();
+      p.deme_id = org.GetDemeID();
       auto tasks = test_info.GetTestPhenotype().GetCurTaskCount();
       for (int i = 0; i < tasks.GetSize(); i++) {
         p.final_task_count.push_back(tasks[i]);
@@ -290,6 +291,12 @@ bool cWorld::setup(World* new_world, cUserFeedback* feedback, const Apto::Map<Ap
   systematics_manager->AddSnapshotFun([](const taxon_t & tax) {
       return emp::to_string(tax.GetData().GetPhenotype().genotype.AsString().GetCString());
     }, "sequence", "Avida instruction sequence for this taxon.");
+
+  if (m_conf->NUM_DEMES.Get() > 1) {
+    systematics_manager->AddSnapshotFun([](const taxon_t & tax) {
+        return emp::to_string(tax.GetData().GetPhenotype().deme_id);
+      }, "deme", "Deme id.");    
+  }
 
   if (m_conf->OEE_RES.Get() != 0) {
     OEE_stats.New(systematics_manager, skel_fun, [null_inst](const std::string & org){return org.size();}, false, m_conf->WORLD_X.Get() * m_conf->WORLD_Y.Get() * 200000);

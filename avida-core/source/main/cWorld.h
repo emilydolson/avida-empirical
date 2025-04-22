@@ -65,6 +65,7 @@ struct Phenotype {
   Avida::InstructionSequence genotype;
   int gestation_time = -1;
   int start_generation = -1;
+  int deme_id = 0;
   emp::vector<int> final_task_count;
 
   bool operator==(const Phenotype & other) const {

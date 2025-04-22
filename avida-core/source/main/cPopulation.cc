@@ -1374,13 +1374,11 @@ bool cPopulation::ActivateOrganism(cAvidaContext& ctx, cOrganism* in_organism, c
   ConstInstructionSequencePtr seq;
   seq.DynamicCastFrom(in_organism->GetGenome().Representation());
 
-  InstructionSequence* nseq = new InstructionSequence(*seq);
+  // InstructionSequence* nseq = new InstructionSequence(*seq);
   m_world->curr_genome = in_organism->GetGenome();
   m_world->next_cell_id = target_cell.GetID();
-
-  m_world->offspring_ready_sig.Trigger(*in_organism);
   
-  delete nseq;
+  // delete nseq;
 
   // Setup the inputs in the target cell.
   environment.SetupInputs(ctx, target_cell.m_inputs);
@@ -1543,6 +1541,8 @@ bool cPopulation::ActivateOrganism(cAvidaContext& ctx, cOrganism* in_organism, c
   //   delete test_cpu;
   // }
 
+  m_world->offspring_ready_sig.Trigger(*in_organism);
+  
   bool org_survived = true;
   // For tolerance_window, we cheated by dumping doomed offspring into cell (X * Y) - 1 ...now that we updated the stats, we need to
   // kill that org. @JJB
