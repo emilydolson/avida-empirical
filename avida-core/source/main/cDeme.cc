@@ -91,6 +91,7 @@ cDeme::cDeme()
   , m_num_reproductives(0)
 {
   unique_id = next_deme;
+  std::cout << unique_id << std::endl;
   next_deme++;
 }
 

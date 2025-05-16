@@ -3275,6 +3275,8 @@ void cPopulation::ReplicateDeme(cDeme& source_deme, cAvidaContext& ctx)
  */
 void cPopulation::ReplaceDeme(cDeme& source_deme, cDeme& target_deme, cAvidaContext& ctx)
 {
+  target_deme.unique_id = target_deme.next_deme;
+  target_deme.next_deme++;
   // Stats tracking; pre-replication hook.
   m_world->GetStats().DemePreReplication(source_deme, target_deme);
 

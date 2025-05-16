@@ -72,10 +72,15 @@ cWorld::cWorld(cAvidaConfig* cfg, const cString& wd)
 
     eval_fun = [this](emp::Ptr<taxon_t> tax, cOrganism & org){
       // std::cout << "evaluating" << tax << std::endl;
+      Phenotype p;
+      ConstInstructionSequencePtr seq;
+      seq.DynamicCastFrom(org.GetGenome().Representation());
+
+      p.genotype = Avida::InstructionSequence(*seq);
 
       // Avida::GeneticRepresentation rep = *(org.GetGenome().Representation());
       // GeneticRepresentationPtr(org.GetGenome().Representation())
-      Avida::Genome gen(curr_genome.HardwareType(), curr_genome.Properties(), GeneticRepresentationPtr(new InstructionSequence(tax->GetData().GetPhenotype().genotype)));
+      Avida::Genome gen(curr_genome.HardwareType(), curr_genome.Properties(), GeneticRepresentationPtr(new InstructionSequence(p.genotype)));
       // Avida::Genome gen(curr_genome.HardwareType(), curr_genome.Properties(), );
       //  cAnalyzeGenotype genotype(this, gen);
       //  genotype.Recalculate(*m_ctx);
@@ -83,23 +88,22 @@ cWorld::cWorld(cAvidaConfig* cfg, const cString& wd)
       cTestCPU* test_cpu = GetHardwareManager().CreateTestCPU(*m_ctx);
       // test_info.UseManualInputs(curr_target_cell.GetInputs()); // Test using what the environment will be
       test_cpu->TestGenome(*m_ctx, test_info, gen);  // Use the true genome
-      delete test_cpu;
+
       tax->GetData().RecordFitness(test_info.GetGenotypeFitness());
-      Phenotype p;
+      
       // p.merit = test_info.GetTestPhenotype().GetMerit().GetDouble();
       p.gestation_time = test_info.GetTestPhenotype().GetGestationTime();
+      // std::cout << "tax " << tax->GetData().GetPhenotype().genotype.AsString() << " Gen:" << gen.AsString() << " " << test_info.IsViable() << " " << "Gest " << p.gestation_time << " " << org.GetDeme()->unique_id <<  std::endl;
       p.start_generation = test_info.GetTestPhenotype().GetGeneration();
       p.deme_id = org.GetDeme()->unique_id;
       auto tasks = test_info.GetTestPhenotype().GetCurTaskCount();
       for (int i = 0; i < tasks.GetSize(); i++) {
         p.final_task_count.push_back(tasks[i]);
       }
-      ConstInstructionSequencePtr seq;
-      seq.DynamicCastFrom(org.GetGenome().Representation());
 
-      p.genotype = Avida::InstructionSequence(*seq);
 
       tax->GetData().RecordPhenotype(p);
+      delete test_cpu;
    };
 
 
