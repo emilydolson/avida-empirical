@@ -57,6 +57,7 @@ class cPopulation;
 class cMerit;
 class cPopulationCell;
 class cStats;
+class cDeme;
 class cTestCPU;
 class cUserFeedback;
 template<class T> class tDataEntry;
@@ -66,6 +67,7 @@ struct Phenotype {
   int gestation_time = -1;
   int start_generation = -1;
   int deme_id = 0;
+  double deme_fitness = -1;
   emp::vector<int> final_task_count;
 
   bool operator==(const Phenotype & other) const {
@@ -177,14 +179,16 @@ public:
   emp::Signal<void(int)> org_placement_sig;      // Trigger: Organism has been added to population
   emp::Signal<void(int)> org_death_sig;      // Trigger: Organism has been added to population
   emp::Signal<void(int)> on_update_sig;          // Trigger: New update is starting.
-  emp::Signal<void(int)> deme_repro_sig;          // Trigger: New update is starting.
-
+  emp::Signal<void(int)> deme_repro_sig;          
+  emp::Signal<void(cDeme &)> before_deme_repro_sig;          
+  
   Avida::InstructionSequence non_const_seq;
   int next_cell_id = -1;
   emp::DataFile oee_file;
   emp::DataFile phylodiversity_file;
   emp::DataFile lineage_file;
   emp::DataFile dom_file;
+  ofstream deme_file;
 
   using systematics_t = emp::Systematics<cOrganism, std::string, emp::datastruct::mut_landscape_info<Phenotype>>;
   using taxon_t = emp::Taxon< std::string, emp::datastruct::mut_landscape_info<Phenotype>>;
@@ -201,6 +205,7 @@ public:
   emp::SignalKey OnUpdate(const std::function<void(int)> & fun) { return on_update_sig.AddAction(fun); }
   emp::SignalKey OnInjectReady(const std::function<void(cOrganism &)> & fun) { return inject_ready_sig.AddAction(fun); }
   emp::SignalKey OnDemeRepro(const std::function<void(int)> & fun) { return deme_repro_sig.AddAction(fun); }
+  emp::SignalKey BeforeDemeRepro(const std::function<void(cDeme &)> & fun) { return before_deme_repro_sig.AddAction(fun); }
 
   void SetDriver(WorldDriver* driver, bool take_ownership = false);
 

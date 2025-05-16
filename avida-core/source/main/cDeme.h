@@ -60,6 +60,7 @@ private:
   bool replicateDeme;
   bool treatable;
   std::set<int> treatment_ages;
+  inline static long int next_deme = 0;
 
 // The following should be moved to cDemePhenotype / cPopulationPhenotype
   int cur_birth_count; //!< Number of organisms that have been born into this deme since reset.
@@ -160,6 +161,7 @@ public:
   cPopulationCell& GetCell(int pos) const;
   cPopulationCell& GetCell(int x, int y) const;
   cOrganism* GetOrganism(int pos) const;
+  long int unique_id;
   
   std::vector<int> GetGenotypeIDs();
 

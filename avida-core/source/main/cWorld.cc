@@ -89,7 +89,7 @@ cWorld::cWorld(cAvidaConfig* cfg, const cString& wd)
       // p.merit = test_info.GetTestPhenotype().GetMerit().GetDouble();
       p.gestation_time = test_info.GetTestPhenotype().GetGestationTime();
       p.start_generation = test_info.GetTestPhenotype().GetGeneration();
-      p.deme_id = org.GetDemeID();
+      p.deme_id = org.GetDeme()->unique_id;
       auto tasks = test_info.GetTestPhenotype().GetCurTaskCount();
       for (int i = 0; i < tasks.GetSize(); i++) {
         p.final_task_count.push_back(tasks[i]);
@@ -291,6 +291,12 @@ bool cWorld::setup(World* new_world, cUserFeedback* feedback, const Apto::Map<Ap
   systematics_manager->AddSnapshotFun([](const taxon_t & tax) {
       return emp::to_string(tax.GetData().GetPhenotype().genotype.AsString().GetCString());
     }, "sequence", "Avida instruction sequence for this taxon.");
+  systematics_manager->AddSnapshotFun([](const taxon_t & tax) {
+      return emp::to_string(tax.GetData().GetPhenotype().gestation_time);
+    }, "gestation_time", "Gestation Time.");
+  systematics_manager->AddSnapshotFun([](const taxon_t & tax) {
+      return emp::to_string(tax.GetData().GetFitness());
+    }, "fitness", "Fitness");
 
   if (m_conf->NUM_DEMES.Get() > 1) {
     systematics_manager->AddSnapshotFun([](const taxon_t & tax) {
@@ -315,6 +321,7 @@ bool cWorld::setup(World* new_world, cUserFeedback* feedback, const Apto::Map<Ap
     systematics_manager->SetNextParent(pos);});
   OnDemeRepro([this](int pos){
     next_parent = systematics_manager->GetTaxonAt(pos);});    
+
   OnOffspringReady([this](cOrganism & org){ 
     // std::cout << "on ready" << std::endl;
     systematics_manager->AddOrg(org, emp::WorldPosition(next_cell_id,0));
@@ -356,8 +363,16 @@ bool cWorld::setup(World* new_world, cUserFeedback* feedback, const Apto::Map<Ap
     // std::cout << "End on update3" << std::endl; 
     } });
 
+  deme_file.open("deme_info.csv");
+  deme_file << "update, deme_id, time_used, normalized_time_used, birth_count, density" << std::endl;
   std::function<int()> gen_fun = [this](){return std::round(GetStats().GetGeneration());};
   std::function<int()> update_fun = [this](){return GetStats().GetUpdate();};
+
+  BeforeDemeRepro([this](cDeme & deme){
+    std::cout << GetStats().GetUpdate() << " " << deme.unique_id << " " << deme.GetTimeUsed() << " " << deme.GetNormalizedTimeUsed() << " " << deme.GetBirthCount() << " " << deme.GetDensity() << "\n";
+    deme_file << GetStats().GetUpdate() << " " << deme.unique_id << " " << deme.GetTimeUsed() << " " << deme.GetNormalizedTimeUsed() << " " << deme.GetBirthCount() << " " << deme.GetDensity() << "\n";
+  });
+
   // std::cout << " Setupp output" << std::endl;
   if (m_conf->OEE_RES.Get() != 0) {
     oee_file.AddFun(gen_fun, "generation", "Generation");

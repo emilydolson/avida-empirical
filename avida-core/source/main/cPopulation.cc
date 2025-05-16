@@ -3123,7 +3123,7 @@ void cPopulation::ReplicateDemes(int rep_trigger, cAvidaContext& ctx)
         assert(false);
       }
     }
-
+    m_world->before_deme_repro_sig.Trigger(source_deme);
     ReplicateDeme(source_deme, ctx);
   }
 }

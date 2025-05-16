@@ -90,6 +90,8 @@ cDeme::cDeme()
   , m_reaction_result(NULL)
   , m_num_reproductives(0)
 {
+  unique_id = next_deme;
+  next_deme++;
 }
 
 cDeme::~cDeme()
